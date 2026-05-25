@@ -54,7 +54,11 @@ async function sbInsert(rec) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
     method: "POST", headers, body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("Insert failed");
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
+    throw new Error(`HTTP ${res.status} — ${msg}`);
+  }
   const data = await res.json();
   const r = data[0];
   return { id: r.id, vehicleNumber: r.vehicle_number, ownerName: r.owner_name, tower: r.tower, flat: r.flat, phone: r.phone, email: r.email || "", manufacturer: r.manufacturer || "", vehicleModel: r.vehicle_model || "" };
@@ -71,17 +75,37 @@ async function sbUpdate(id, rec) {
     manufacturer: rec.manufacturer || "",
     vehicle_model: rec.vehicleModel || "",
   };
+  console.log("sbUpdate called with:", { id, body });
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
     method: "PATCH", headers, body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("Update failed");
+  console.log("sbUpdate response status:", res.status, res.statusText);
+  if (!res.ok) {
+    let msg = res.statusText;
+    let errorDetails = null;
+    try { 
+      const b = await res.json(); 
+      errorDetails = b;
+      msg = b.message || b.hint || b.error || b.details || msg;
+      console.error("sbUpdate error details:", errorDetails);
+      console.error("Full error object:", JSON.stringify(b, null, 2));
+    } catch (e) {
+      console.error("Failed to parse error response:", e);
+    }
+    throw new Error(`HTTP ${res.status} — ${msg}`);
+  }
+  console.log("sbUpdate successful");
 }
 
 async function sbDelete(id) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
     method: "DELETE", headers,
   });
-  if (!res.ok) throw new Error("Delete failed");
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
+    throw new Error(`HTTP ${res.status} — ${msg}`);
+  }
 }
 
 async function sbBulkInsert(recs) {
@@ -98,7 +122,11 @@ async function sbBulkInsert(recs) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
     method: "POST", headers, body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("Bulk insert failed");
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
+    throw new Error(`HTTP ${res.status} — ${msg}`);
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -542,8 +570,11 @@ export default function MHTEVDirectory() {
     setLoading(true); setDbError("");
     try {
       const data = await sbFetch();
+      console.log("Loaded records:", data.length);
+      console.log("Sample record structure:", data.length > 0 ? data[0] : "No records");
+      console.log("All record IDs:", data.map(r => ({ id: r.id, vehicleNumber: r.vehicleNumber })));
       setRecords(data);
-    } catch {
+    } catch (err) {
       setDbError("Could not connect to database — " + (err.message || "unknown error") + ". Check your internet connection and Supabase RLS settings.");
     } finally {
       setLoading(false);
@@ -645,8 +676,8 @@ export default function MHTEVDirectory() {
       const newRec = await sbInsert({ ...regForm, vehicleNumber: regForm.vehicleNumber.toUpperCase() });
       setRecords(prev => [...prev, newRec]);
       setRegSuccess(true); setRegForm(EMPTY_FORM); setRegVnErr("");
-    } catch {
-      setRegError("Failed to save. Please check your connection and try again.");
+    } catch (error) {
+      setRegError(error.message || "Failed to save. Please check your connection and try again.");
     } finally {
       setRegSaving(false);
     }
@@ -654,20 +685,34 @@ export default function MHTEVDirectory() {
 
   // ── Admin edit (can edit AND delete)
   function openEdit(r) {
+    if (!r || !r.id) {
+      console.error("Cannot edit record: missing ID", r);
+      flash("Cannot edit this record - missing ID", "err");
+      return;
+    }
+    console.log("Opening edit for record:", r.id, r);
     setEditRec(r); setEditForm({ ...r }); setEditVnErr(""); setEditError(""); setShowEdit(true);
   }
   async function handleEditSave() {
+    if (!editRec || !editRec.id) {
+      setEditError("Cannot save: missing record ID");
+      return;
+    }
     const err = validateForm(editForm, editRec.id);
     if (err) { setEditError(err); return; }
     setEditSaving(true); setEditError("");
     try {
+      console.log("Attempting to update record:", editRec.id, editForm);
       await sbUpdate(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
+      console.log("Update successful");
       setRecords(prev => prev.map(r =>
         r.id === editRec.id ? { ...editForm, id: r.id, vehicleNumber: editForm.vehicleNumber.toUpperCase() } : r
       ));
       setShowEdit(false); flash("Record updated.");
-    } catch {
-      setEditError("Failed to save. Please try again.");
+    } catch (error) {
+      console.error("Update failed with error:", error);
+      const errorMessage = error?.message || error?.toString() || "Failed to save. Please try again.";
+      setEditError(errorMessage);
     } finally {
       setEditSaving(false);
     }
@@ -680,8 +725,8 @@ export default function MHTEVDirectory() {
       await sbDelete(id);
       setRecords(prev => prev.filter(r => r.id !== id));
       flash("Record deleted.");
-    } catch {
-      flash("Delete failed. Please try again.", "err");
+    } catch (error) {
+      flash(error.message || "Delete failed. Please try again.", "err");
     }
   }
 
@@ -766,7 +811,7 @@ export default function MHTEVDirectory() {
         if (skipped)    parts.push(`${skipped} blank row${skipped>1?"s":""} skipped`);
         setCsvMsg(parts.join(" · "));
         setTimeout(() => setCsvMsg(""), 7000);
-      } catch { setCsvMsg("Failed to import CSV. Check format or connection."); }
+      } catch (error) { setCsvMsg(error.message || "Failed to import CSV. Check format or connection."); }
       e.target.value = "";
     };
     reader.readAsText(file);
