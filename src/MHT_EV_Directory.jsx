@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { fetchRecords, insertRecord, updateRecord, deleteRecord, bulkInsert } from "./supabase";
 import { signUp, signIn, signOut, getSession, onAuthChange, getMyProfile, listPending, setApproval } from "./auth";
+import { fetchPosts, addPost, deletePost, fetchFaults, addFault, resolveFault } from "./community";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // Indian-market EV catalogue with battery capacity (kWh). Sourced from public
@@ -432,6 +433,184 @@ function ChargingEtiquette() {
   );
 }
 
+// ─── Community Board (tips / Q&A) ─────────────────────────────────────────────
+function Board({ userId, authorName, isAdmin, flash }) {
+  const [posts, setPosts]       = useState([]);
+  const [loaded, setLoaded]     = useState(false);
+  const [kind, setKind]         = useState("tip");
+  const [title, setTitle]       = useState("");
+  const [body, setBody]         = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [replyTo, setReplyTo]   = useState(null);
+  const [replyBody, setReplyBody] = useState("");
+
+  useEffect(() => { (async () => {
+    try { setPosts(await fetchPosts()); } catch (e) { flash(e.message, "err"); } finally { setLoaded(true); }
+  })(); }, []);
+
+  async function submit() {
+    if (!body.trim()) { flash("Write something first.", "err"); return; }
+    setBusy(true);
+    try {
+      const p = await addPost({ kind, title: title.trim(), body: body.trim(), authorName }, userId);
+      setPosts(prev => [p, ...prev]); setTitle(""); setBody("");
+    } catch (e) { flash(e.message, "err"); } finally { setBusy(false); }
+  }
+  async function submitReply(parentId) {
+    if (!replyBody.trim()) return;
+    try {
+      const p = await addPost({ kind: "reply", body: replyBody.trim(), parentId, authorName }, userId);
+      setPosts(prev => [...prev, p]); setReplyBody(""); setReplyTo(null);
+    } catch (e) { flash(e.message, "err"); }
+  }
+  async function remove(id) {
+    if (!window.confirm("Delete this post?")) return;
+    try { await deletePost(id); setPosts(prev => prev.filter(p => p.id !== id && p.parent_id !== id)); }
+    catch (e) { flash(e.message, "err"); }
+  }
+
+  const threads   = posts.filter(p => !p.parent_id);
+  const repliesOf = id => posts.filter(p => p.parent_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const canManage = p => isAdmin || p.user_id === userId;
+
+  return (
+    <div className="reg-wrap" style={{ maxWidth:720 }}>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Community Board</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Tips & <span>Q&A</span></h1>
+        <p className="lookup-p">Share an EV tip or ask the community a question.</p>
+      </div>
+
+      <div className="dash-card" style={{ marginTop:20 }}>
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          <button className={kind === "tip" ? "btn-green" : "btn-ghost"} onClick={() => setKind("tip")}>Tip</button>
+          <button className={kind === "question" ? "btn-green" : "btn-ghost"} onClick={() => setKind("question")}>Question</button>
+        </div>
+        <input className="fi" style={{ marginBottom:10 }} placeholder={kind === "tip" ? "Tip title (optional)" : "Your question (short title)"}
+          value={title} onChange={e => setTitle(e.target.value)} />
+        <textarea className="fi" rows={3} style={{ marginBottom:10, resize:"vertical" }}
+          placeholder={kind === "tip" ? "Share the details…" : "Add any context…"}
+          value={body} onChange={e => setBody(e.target.value)} />
+        <div className="f-actions">
+          <button className="btn-green" onClick={submit} disabled={busy}>{busy ? "Posting…" : <><IcoPlus /> Post</>}</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop:20 }}>
+        {!loaded ? <div className="csv-hint">Loading…</div>
+          : threads.length === 0 ? <div className="empty">No posts yet — start the conversation.</div>
+          : threads.map(p => (
+            <div key={p.id} className="dash-card" style={{ marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10 }}>
+                <div>
+                  <span className="badge" style={{ marginRight:8 }}>{p.kind === "question" ? "Q" : "TIP"}</span>
+                  <strong style={{ color:"#fff" }}>{p.title || (p.kind === "question" ? "Question" : "Tip")}</strong>
+                </div>
+                {canManage(p) && <button className="ico-btn del" onClick={() => remove(p.id)} title="Delete"><IcoDelete /></button>}
+              </div>
+              <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", marginTop:8, whiteSpace:"pre-wrap", lineHeight:1.6 }}>{p.body}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:8 }}>
+                {p.author_name || "Resident"} · {p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}
+              </div>
+
+              {repliesOf(p.id).map(r => (
+                <div key={r.id} className="board-reply">
+                  <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", whiteSpace:"pre-wrap", lineHeight:1.6 }}>{r.body}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:4, display:"flex", justifyContent:"space-between" }}>
+                    <span>{r.author_name || "Resident"} · {r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}</span>
+                    {canManage(r) && <button className="forgot-link" style={{ marginTop:0 }} onClick={() => remove(r.id)}>delete</button>}
+                  </div>
+                </div>
+              ))}
+
+              {replyTo === p.id ? (
+                <div style={{ marginTop:10, display:"flex", gap:8 }}>
+                  <input className="fi" placeholder="Write a reply…" value={replyBody}
+                    onChange={e => setReplyBody(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && submitReply(p.id)} />
+                  <button className="btn-green" onClick={() => submitReply(p.id)}>Reply</button>
+                </div>
+              ) : (
+                <button className="forgot-link" onClick={() => { setReplyTo(p.id); setReplyBody(""); }}>Reply</button>
+              )}
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── Charger Fault Reporting ──────────────────────────────────────────────────
+function Faults({ userId, reporterName, isAdmin, flash }) {
+  const [faults, setFaults]   = useState([]);
+  const [loaded, setLoaded]   = useState(false);
+  const [location, setLocation] = useState("");
+  const [desc, setDesc]       = useState("");
+  const [busy, setBusy]       = useState(false);
+
+  useEffect(() => { (async () => {
+    try { setFaults(await fetchFaults()); } catch (e) { flash(e.message, "err"); } finally { setLoaded(true); }
+  })(); }, []);
+
+  async function submit() {
+    if (!desc.trim()) { flash("Describe the fault first.", "err"); return; }
+    setBusy(true);
+    try {
+      const f = await addFault({ location: location.trim(), description: desc.trim(), reporterName }, userId);
+      setFaults(prev => [f, ...prev]); setLocation(""); setDesc("");
+      flash("Fault reported. Thanks!");
+    } catch (e) { flash(e.message, "err"); } finally { setBusy(false); }
+  }
+  async function resolve(id) {
+    try { await resolveFault(id); setFaults(prev => prev.map(f => f.id === id ? { ...f, status: "resolved" } : f)); }
+    catch (e) { flash(e.message, "err"); }
+  }
+
+  return (
+    <div className="reg-wrap" style={{ maxWidth:720 }}>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Charger Maintenance</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Report a <span>Charger Fault</span></h1>
+        <p className="lookup-p">Flag a broken or faulty community charger so the committee can fix it.</p>
+      </div>
+
+      <div className="dash-card" style={{ marginTop:20 }}>
+        <input className="fi" style={{ marginBottom:10 }} placeholder="Which charger / bay? (e.g. Basement B2, Point 3)"
+          value={location} onChange={e => setLocation(e.target.value)} />
+        <textarea className="fi" rows={3} style={{ marginBottom:10, resize:"vertical" }}
+          placeholder="What's wrong? (e.g. cable damaged, point not powering on)"
+          value={desc} onChange={e => setDesc(e.target.value)} />
+        <div className="f-actions">
+          <button className="btn-green" onClick={submit} disabled={busy}>{busy ? "Reporting…" : <><IcoPlus /> Report Fault</>}</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop:20 }}>
+        {!loaded ? <div className="csv-hint">Loading…</div>
+          : faults.length === 0 ? <div className="empty">No faults reported. 🎉</div>
+          : faults.map(f => (
+            <div key={f.id} className="dash-card" style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"flex-start" }}>
+                <div>
+                  <span className={"fault-badge " + f.status}>{f.status === "open" ? "OPEN" : "RESOLVED"}</span>
+                  {f.location && <strong style={{ color:"#fff", marginLeft:8 }}>{f.location}</strong>}
+                </div>
+                {isAdmin && f.status === "open" &&
+                  <button className="btn-green" style={{ padding:"6px 12px" }} onClick={() => resolve(f.id)}><IcoCheck /> Resolve</button>}
+              </div>
+              <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", marginTop:8, whiteSpace:"pre-wrap", lineHeight:1.6 }}>{f.description}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:8 }}>
+                {f.reporter_name || "Resident"} · {f.created_at ? new Date(f.created_at).toLocaleDateString() : ""}
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  );
+}
+
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@700;800;900&display=swap');
@@ -604,6 +783,10 @@ td { padding:12px 14px; font-size:13px; color:rgba(255,255,255,.7); }
 .eti-ico { flex-shrink:0; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; margin-top:1px; }
 .eti-ico.ok { background:rgba(34,197,94,.12); color:#4ade80; }
 .eti-ico.bad { background:rgba(239,68,68,.12); color:rgba(252,165,165,.9); }
+.board-reply { margin:10px 0 0 16px; padding:10px 14px; border-left:2px solid rgba(74,222,128,.25); background:rgba(255,255,255,.02); border-radius:0 8px 8px 0; }
+.fault-badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:5px; font-size:10px; letter-spacing:1px; }
+.fault-badge.open { background:rgba(239,68,68,.12); color:rgba(252,165,165,.9); border:1px solid rgba(239,68,68,.25); }
+.fault-badge.resolved { background:rgba(34,197,94,.1); color:#4ade80; border:1px solid rgba(34,197,94,.25); }
 
 @media (max-width:700px) {
   .page { padding:24px 16px; }
@@ -1049,6 +1232,8 @@ export default function MHTEVDirectory() {
             </button>
             <button className={"tab-btn" + (tab==="dashboard" ? " active" : "")} onClick={() => setTab("dashboard")}>Dashboard</button>
             <button className={"tab-btn" + (tab==="charging" ? " active" : "")} onClick={() => setTab("charging")}>Charging</button>
+            <button className={"tab-btn" + (tab==="board" ? " active" : "")} onClick={() => setTab("board")}>Board</button>
+            <button className={"tab-btn" + (tab==="faults" ? " active" : "")} onClick={() => setTab("faults")}>Faults</button>
             <button className={"tab-btn" + (tab==="register" ? " active" : "")} onClick={() => setTab("register")}>Register</button>
             {isAdmin && (
               <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")}
@@ -1145,6 +1330,12 @@ export default function MHTEVDirectory() {
 
         {/* ══════ CHARGING ETIQUETTE ══════ */}
         {tab === "charging" && <ChargingEtiquette />}
+
+        {/* ══════ COMMUNITY BOARD ══════ */}
+        {tab === "board" && <Board userId={session.user.id} authorName={profile?.full_name} isAdmin={isAdmin} flash={flash} />}
+
+        {/* ══════ CHARGER FAULTS ══════ */}
+        {tab === "faults" && <Faults userId={session.user.id} reporterName={profile?.full_name} isAdmin={isAdmin} flash={flash} />}
 
         {/* ══════ REGISTER (public — add & edit, NO delete) ══════ */}
         {tab === "register" && (
