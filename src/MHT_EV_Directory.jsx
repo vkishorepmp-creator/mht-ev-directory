@@ -86,29 +86,29 @@ const EV_MAKERS = [
 // public figures (2024-25); residents can type a model not listed here.
 const EV_BIKES = [
   { name: "Ola Electric", models: [
-    { name: "S1 Pro", battery: [4, 5.3] },
-    { name: "S1 Air", battery: [3, 4] },
+    { name: "S1 Pro", battery: [4, 3, 5.2] },
+    { name: "S1 Air", battery: [3, 2, 4] },
     { name: "S1 X", battery: [2, 3, 4] },
   ]},
   { name: "Ather Energy", models: [
-    { name: "450X", battery: [3.7] },
+    { name: "450X", battery: [3.7, 2.9] },
     { name: "450 Apex", battery: [3.7] },
     { name: "450S", battery: [2.9] },
     { name: "Rizta", battery: [2.9, 3.7] },
   ]},
   { name: "TVS Motor", models: [
-    { name: "iQube", battery: [3.04, 3.4, 5.1] },
-    { name: "X", battery: [10.2] },
+    { name: "iQube", battery: [3.5, 2.2, 3.1, 4.7, 5.3] },
+    { name: "X", battery: [4.4] },
   ]},
   { name: "Bajaj Auto", models: [
-    { name: "Chetak", battery: [3.2] },
+    { name: "Chetak", battery: [3.5, 3.0, 2.5] },
   ]},
   { name: "Hero Vida", models: [
     { name: "V1", battery: [3.44, 3.94] },
-    { name: "VX2", battery: [3.4] },
+    { name: "VX2", battery: [3.4, 2.2] },
   ]},
   { name: "Ampere", models: [
-    { name: "Nexus", battery: [3, 3.7] },
+    { name: "Nexus", battery: [3] },
     { name: "Magnus", battery: [2.3] },
   ]},
   { name: "Revolt Motors", models: [
