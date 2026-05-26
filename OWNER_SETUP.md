@@ -84,6 +84,15 @@ You can now log in and approve other residents from the Admin → Approvals queu
 
 ---
 
+## Test before going live
+
+After completing the steps above on a **staging** Supabase project, run the
+end-to-end test checklist in [`TESTING.md`](TESTING.md) — especially section B,
+which proves Row-Level Security actually blocks anonymous access to resident
+data. Only point the env vars at production once the checklist passes.
+
+---
+
 ## Step 6 — Keep the free Supabase project awake (optional but recommended)
 
 Supabase free-tier projects pause after ~7 days of inactivity. A daily
