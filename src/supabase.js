@@ -19,6 +19,7 @@ function toRecord(r) {
   return {
     id: r.id,
     userId: r.user_id || null,
+    createdAt: r.created_at || null,
     vehicleNumber: r.vehicle_number,
     ownerName: r.owner_name,
     tower: r.tower,

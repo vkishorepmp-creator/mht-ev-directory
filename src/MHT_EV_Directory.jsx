@@ -341,6 +341,10 @@ function Dashboard({ records }) {
   const byBattery = countBy(records, r => r.batteryCapacity !== "" && r.batteryCapacity != null ? String(r.batteryCapacity) : "")
     .map(([k, n]) => [k + " kWh", n]);
   const totalKwh  = records.reduce((s, r) => s + (Number(r.batteryCapacity) || 0), 0);
+  const recent    = [...records]
+    .filter(r => r.createdAt)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5);
 
   return (
     <div>
@@ -359,6 +363,22 @@ function Dashboard({ records }) {
         <BarList title="By Brand" rows={byBrand} />
         <BarList title="By Model" rows={byModel} />
         <BarList title="By Battery Capacity" rows={byBattery} />
+      </div>
+      <div className="dash-card" style={{ marginTop:16 }}>
+        <div className="dash-card-title">🔌 Newest EVs in the community</div>
+        {recent.length === 0
+          ? <div className="csv-hint">No registrations yet.</div>
+          : recent.map(r => (
+              <div key={r.id} className="eti-row" style={{ marginBottom:10 }}>
+                <span className="eti-ico ok">⚡</span>
+                <span>
+                  <strong style={{ color:"#fff" }}>{r.manufacturer} {r.vehicleModel}</strong>
+                  {" — Tower "}{r.tower}{r.flat ? `, Flat ${r.flat}` : ""}
+                  {r.createdAt && <span style={{ color:"rgba(255,255,255,.3)", fontSize:11 }}>{"  ·  "}{new Date(r.createdAt).toLocaleDateString()}</span>}
+                </span>
+              </div>
+            ))
+        }
       </div>
     </div>
   );
@@ -568,6 +588,10 @@ td { padding:12px 14px; font-size:13px; color:rgba(255,255,255,.7); }
 @keyframes up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 @keyframes fi  { from { opacity:0; } to { opacity:1; } }
 
+.contact-row { display:flex; gap:10px; margin-top:20px; flex-wrap:wrap; }
+.contact-btn { text-decoration:none; padding:9px 18px; border-radius:8px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:rgba(255,255,255,.7); transition:all .2s; }
+.contact-btn:hover { border-color:rgba(74,222,128,.4); color:#4ade80; }
+.contact-btn.wa { border-color:rgba(74,222,128,.3); color:#4ade80; }
 .dash-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-top:8px; }
 .dash-card { background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.07); border-radius:14px; padding:20px 22px; }
 .dash-card-title { font-family:'Outfit',sans-serif; font-weight:800; font-size:15px; color:#fff; margin-bottom:16px; }
@@ -1083,6 +1107,11 @@ export default function MHTEVDirectory() {
                   <div className="rf"><label>Flat No.</label><span>{lookupResult.flat}</span></div>
                   <div className="rf"><label>Phone</label><span>{lookupResult.phone}</span></div>
                   {lookupResult.email && <div className="rf"><label>Email</label><span>{lookupResult.email}</span></div>}
+                </div>
+                <div className="contact-row">
+                  {lookupResult.phone && <a className="contact-btn" href={`tel:${lookupResult.phone}`}>Call</a>}
+                  {lookupResult.phone && <a className="contact-btn wa" href={`https://wa.me/91${lookupResult.phone}`} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  {lookupResult.email && <a className="contact-btn" href={`mailto:${lookupResult.email}`}>Email</a>}
                 </div>
               </div>
             )}
