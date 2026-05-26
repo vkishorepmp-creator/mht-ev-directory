@@ -26,12 +26,13 @@ policies, that key must be rotated or the hardening is meaningless.
 
 ## Step 2 — Apply the database migration
 
-Supabase dashboard → **SQL Editor** → paste and run
-`supabase/migrations/0001_resident_auth.sql`.
+Supabase dashboard → **SQL Editor** → run both migration files in order:
+1. `supabase/migrations/0001_resident_auth.sql`
+2. `supabase/migrations/0002_battery_capacity.sql`
 
-This creates the `profiles` table, the signup trigger, the `is_admin()` /
+0001 creates the `profiles` table, the signup trigger, the `is_admin()` /
 `is_approved()` helpers, adds `ev_records.user_id`, and **enables Row-Level
-Security**.
+Security**. 0002 adds `ev_records.battery_capacity` (kWh) used by the dashboard.
 
 > ⚠️ The moment RLS is enabled, anonymous reads stop working — which is the
 > point. The app will only return data to logged-in, approved users. Do not

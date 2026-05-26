@@ -3,26 +3,86 @@ import { fetchRecords, insertRecord, updateRecord, deleteRecord, bulkInsert } fr
 import { signUp, signIn, signOut, getSession, onAuthChange, getMyProfile, listPending, setApproval } from "./auth";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// Indian-market EV catalogue with battery capacity (kWh). Sourced from public
+// spec data (2024-25). Residents can also type a model not listed here.
 const EV_MAKERS = [
-  { name: "Tata Motors",            models: ["Tiago EV","Tigor EV","Punch EV","Nexon EV","Curvv EV"] },
-  { name: "JSW MG Motor India",     models: ["Comet EV","Windsor EV","ZS EV"] },
-  { name: "Mahindra & Mahindra",    models: ["XUV400","BE 6","XEV 9e"] },
-  { name: "Hyundai Motor India",    models: ["Creta EV","Ioniq 5"] },
-  { name: "BYD India",              models: ["e6/M6","Atto 3","Seal"] },
-  { name: "BMW India",              models: ["iX1","i4","i5","iX","i7"] },
-  { name: "Mercedes-Benz India",    models: ["EQA","EQB","EQE SUV","EQS Sedan"] },
-  { name: "Audi India",             models: ["Q4 e-tron","Q8 e-tron","Q8 e-tron Sportback","e-tron GT","RS e-tron GT"] },
-  { name: "Volvo & Polestar India", models: ["XC40 Recharge (EX40)","C40 Recharge (EC40)","EX90"] },
-  { name: "Kia India",              models: ["EV6","EV9"] },
-  { name: "Maruti Suzuki",          models: ["e Vitara"] },
-  { name: "VinFast India",          models: ["VF e34","VF 5"] },
-  { name: "Porsche India",          models: ["Taycan","Taycan Cross Turismo","Macan Electric"] },
-  { name: "Jaguar Land Rover",      models: ["Jaguar I-Pace"] },
-  { name: "Rolls-Royce Motor Cars", models: ["Spectre"] },
+  { name: "Tata Motors", models: [
+    { name: "Tiago EV", battery: [19.2, 24] },
+    { name: "Tigor EV", battery: [26] },
+    { name: "Punch EV", battery: [25, 35] },
+    { name: "Nexon EV", battery: [30, 40.5, 46.08] },
+    { name: "Curvv EV", battery: [45, 55] },
+  ]},
+  { name: "JSW MG Motor India", models: [
+    { name: "Comet EV", battery: [17.3] },
+    { name: "Windsor EV", battery: [38, 52.9] },
+    { name: "ZS EV", battery: [50.3] },
+  ]},
+  { name: "Mahindra & Mahindra", models: [
+    { name: "XUV400", battery: [34.5, 39.4] },
+    { name: "BE 6", battery: [59, 79] },
+    { name: "XEV 9e", battery: [59, 79] },
+  ]},
+  { name: "Hyundai Motor India", models: [
+    { name: "Creta EV", battery: [42, 51.4] },
+    { name: "Ioniq 5", battery: [72.6] },
+  ]},
+  { name: "BYD India", models: [
+    { name: "e6/M6", battery: [71.8, 55.4] },
+    { name: "Atto 3", battery: [60.48, 49.92] },
+    { name: "Seal", battery: [61.4, 82.5] },
+  ]},
+  { name: "BMW India", models: [
+    { name: "iX1", battery: [64.7] },
+    { name: "i4", battery: [81.5] },
+    { name: "i5", battery: [81.2] },
+    { name: "iX", battery: [76.6, 111.5] },
+    { name: "i7", battery: [101.7] },
+  ]},
+  { name: "Mercedes-Benz India", models: [
+    { name: "EQA", battery: [66.5] },
+    { name: "EQB", battery: [66.5] },
+    { name: "EQE SUV", battery: [90.6] },
+    { name: "EQS Sedan", battery: [107.8] },
+  ]},
+  { name: "Audi India", models: [
+    { name: "Q4 e-tron", battery: [82] },
+    { name: "Q8 e-tron", battery: [114] },
+    { name: "Q8 e-tron Sportback", battery: [114] },
+    { name: "e-tron GT", battery: [93.4] },
+    { name: "RS e-tron GT", battery: [93.4] },
+  ]},
+  { name: "Volvo & Polestar India", models: [
+    { name: "XC40 Recharge (EX40)", battery: [69, 78] },
+    { name: "C40 Recharge (EC40)", battery: [69, 78] },
+    { name: "EX90", battery: [111] },
+  ]},
+  { name: "Kia India", models: [
+    { name: "EV6", battery: [77.4, 84] },
+    { name: "EV9", battery: [99.8] },
+  ]},
+  { name: "Maruti Suzuki", models: [
+    { name: "e Vitara", battery: [49, 61] },
+  ]},
+  { name: "VinFast India", models: [
+    { name: "VF e34", battery: [42] },
+    { name: "VF 5", battery: [37.23] },
+  ]},
+  { name: "Porsche India", models: [
+    { name: "Taycan", battery: [79.2, 93.4, 105] },
+    { name: "Taycan Cross Turismo", battery: [93.4, 105] },
+    { name: "Macan Electric", battery: [100] },
+  ]},
+  { name: "Jaguar Land Rover", models: [
+    { name: "Jaguar I-Pace", battery: [90] },
+  ]},
+  { name: "Rolls-Royce Motor Cars", models: [
+    { name: "Spectre", battery: [102] },
+  ]},
 ];
 
 const TOWERS = [1,2,3,4,5,6,7,8,9];
-const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"" };
+const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"", batteryCapacity:"" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function validateVN(v) {
@@ -47,6 +107,13 @@ function validateFlat(v) {
   if (!/^\d{3,4}$/.test(v)) return "Flat number must be 3 or 4 digits.";
   return "";
 }
+function validateBattery(v) {
+  if (v === "" || v == null) return "Battery capacity is required.";
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "Battery capacity must be a number in kWh.";
+  if (n < 5 || n > 250) return "Battery capacity looks off — enter kWh (e.g. 40.5).";
+  return "";
+}
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 function IcoBolt()   { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>; }
@@ -66,8 +133,18 @@ function IcoList()   { return <svg width="16" height="16" viewBox="0 0 24 24" fi
 function IcoRefresh(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>; }
 
 // ─── Vehicle Form ─────────────────────────────────────────────────────────────
-function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) {
-  const models = form.manufacturer ? (EV_MAKERS.find(m => m.name === form.manufacturer)?.models || []) : [];
+function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr, idPrefix = "f" }) {
+  const maker     = EV_MAKERS.find(m => m.name === form.manufacturer);
+  const modelList = maker?.models || [];
+  const modelEntry = modelList.find(m => m.name === form.vehicleModel);
+  const batteryOpts = modelEntry?.battery || [];
+
+  function handleModelChange(v) {
+    const me = modelList.find(m => m.name === v);
+    // Auto-fill battery only when the model has a single known capacity.
+    const battery = me && me.battery.length === 1 ? String(me.battery[0]) : form.batteryCapacity;
+    onChange({ ...form, vehicleModel: v, batteryCapacity: battery });
+  }
 
   function handleVnInput(e) {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -132,20 +209,32 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
       <div className="sec-label">Vehicle Details</div>
       <div className="fg full">
         <label>Manufacturer <span className="req">*</span></label>
-        <select className="fs" value={form.manufacturer}
-          onChange={e => onManufacturerChange(e.target.value)}>
-          <option value="">— Select Manufacturer —</option>
-          {EV_MAKERS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-        </select>
+        <input className="fi" list={idPrefix + "-mfr"} value={form.manufacturer}
+          onChange={e => onManufacturerChange(e.target.value)}
+          placeholder="Select or type manufacturer" />
+        <datalist id={idPrefix + "-mfr"}>
+          {EV_MAKERS.map(m => <option key={m.name} value={m.name} />)}
+        </datalist>
       </div>
-      <div className="fg full">
+      <div className="fg">
         <label>Vehicle Model <span className="req">*</span></label>
-        <select className="fs" value={form.vehicleModel}
-          onChange={e => onChange({ ...form, vehicleModel: e.target.value })}
-          disabled={!form.manufacturer}>
-          <option value="">{form.manufacturer ? "— Select Model —" : "— Select manufacturer first —"}</option>
-          {models.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+        <input className="fi" list={idPrefix + "-model"} value={form.vehicleModel}
+          onChange={e => handleModelChange(e.target.value)}
+          placeholder="Select or type model" />
+        <datalist id={idPrefix + "-model"}>
+          {modelList.map(m => <option key={m.name} value={m.name} />)}
+        </datalist>
+      </div>
+      <div className="fg">
+        <label>Battery Capacity (kWh) <span className="req">*</span></label>
+        <input className="fi" list={idPrefix + "-bat"} inputMode="decimal"
+          value={form.batteryCapacity}
+          onChange={e => onChange({ ...form, batteryCapacity: e.target.value.replace(/[^\d.]/g, "") })}
+          placeholder="e.g. 40.5" />
+        <datalist id={idPrefix + "-bat"}>
+          {batteryOpts.map(b => <option key={b} value={b} />)}
+        </datalist>
+        <span className="field-hint">Pick a known capacity or type your own.</span>
       </div>
     </div>
   );
@@ -211,6 +300,113 @@ function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
               </tbody>
             </table>
         }
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function countBy(records, keyFn) {
+  const map = new Map();
+  for (const r of records) {
+    const k = keyFn(r);
+    if (k === "" || k == null) continue;
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function BarList({ title, rows, total, unit = "" }) {
+  const max = rows.length ? Math.max(...rows.map(r => r[1])) : 1;
+  return (
+    <div className="dash-card">
+      <div className="dash-card-title">{title}</div>
+      {rows.length === 0
+        ? <div className="csv-hint">No data yet.</div>
+        : rows.map(([label, n]) => (
+            <div key={label} className="bar-row">
+              <div className="bar-label">{label}{unit}</div>
+              <div className="bar-track"><div className="bar-fill" style={{ width: (n / max * 100) + "%" }} /></div>
+              <div className="bar-num">{n}</div>
+            </div>
+          ))
+      }
+    </div>
+  );
+}
+
+function Dashboard({ records }) {
+  const byBrand   = countBy(records, r => r.manufacturer);
+  const byModel   = countBy(records, r => r.vehicleModel);
+  const byBattery = countBy(records, r => r.batteryCapacity !== "" && r.batteryCapacity != null ? String(r.batteryCapacity) : "")
+    .map(([k, n]) => [k + " kWh", n]);
+  const totalKwh  = records.reduce((s, r) => s + (Number(r.batteryCapacity) || 0), 0);
+
+  return (
+    <div>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Community Insights</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>EV Ownership <span>Dashboard</span></h1>
+        <p className="lookup-p">How the society's EV fleet breaks down by brand, model, and battery size.</p>
+      </div>
+      <div className="stat-row" style={{ marginTop:24 }}>
+        <div className="stat-chip"><span className="stat-num">{records.length}</span><span className="stat-lbl">Total EVs</span></div>
+        <div className="stat-chip"><span className="stat-num">{byBrand.length}</span><span className="stat-lbl">Brands</span></div>
+        <div className="stat-chip"><span className="stat-num">{byModel.length}</span><span className="stat-lbl">Models</span></div>
+        <div className="stat-chip"><span className="stat-num">{Math.round(totalKwh)}</span><span className="stat-lbl">Total kWh</span></div>
+      </div>
+      <div className="dash-grid">
+        <BarList title="By Brand" rows={byBrand} />
+        <BarList title="By Model" rows={byModel} />
+        <BarList title="By Battery Capacity" rows={byBattery} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Charging Etiquette ───────────────────────────────────────────────────────
+const CHARGING_DOS = [
+  "Move your car once it's charged — free the point for the next resident.",
+  "Unplug gently and coil the cable back on the holster, off the ground.",
+  "Charge to ~80% for daily use; leave the last 20% for someone who needs a top-up.",
+  "Note your start time; if there's a shared log or WhatsApp group, post when you plug in and unplug.",
+  "Report a faulty charger or damaged cable to the society office immediately.",
+  "Use a timer or app reminder so you don't occupy the bay longer than needed.",
+];
+const CHARGING_DONTS = [
+  "Don't leave the car parked at the charger after it's full ('ICE-ing' the EV bay).",
+  "Don't unplug someone else's charging car unless there's an agreed, posted rule.",
+  "Don't run a cable across a walkway or from your flat — it's a trip and fire hazard.",
+  "Don't use a damaged charger or cable; stop and report it.",
+  "Don't hog the fast charger for an overnight slow charge — use it for quick top-ups.",
+  "Don't block the bay with a non-EV or a fully charged car.",
+];
+
+function ChargingEtiquette() {
+  return (
+    <div>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Shared Charger Etiquette</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Charging <span>Do's & Don'ts</span></h1>
+        <p className="lookup-p">A few shared courtesies keep the community chargers fair and available for everyone.</p>
+      </div>
+      <div className="dash-grid" style={{ marginTop:24 }}>
+        <div className="dash-card">
+          <div className="dash-card-title" style={{ color:"#4ade80" }}>✓ Do</div>
+          {CHARGING_DOS.map((t, i) => (
+            <div key={i} className="eti-row"><span className="eti-ico ok">✓</span><span>{t}</span></div>
+          ))}
+        </div>
+        <div className="dash-card">
+          <div className="dash-card-title" style={{ color:"rgba(252,165,165,.9)" }}>✕ Don't</div>
+          {CHARGING_DONTS.map((t, i) => (
+            <div key={i} className="eti-row"><span className="eti-ico bad">✕</span><span>{t}</span></div>
+          ))}
+        </div>
+      </div>
+      <div className="reg-notice" style={{ marginTop:20 }}>
+        <span style={{ flexShrink:0 }}>ℹ</span>
+        <span>Society charging rules vary. If the management committee has posted specific timings or booking rules, those take precedence over this general guidance.</span>
       </div>
     </div>
   );
@@ -371,6 +567,19 @@ td { padding:12px 14px; font-size:13px; color:rgba(255,255,255,.7); }
 
 @keyframes up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 @keyframes fi  { from { opacity:0; } to { opacity:1; } }
+
+.dash-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-top:8px; }
+.dash-card { background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.07); border-radius:14px; padding:20px 22px; }
+.dash-card-title { font-family:'Outfit',sans-serif; font-weight:800; font-size:15px; color:#fff; margin-bottom:16px; }
+.bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.bar-label { flex:0 0 38%; font-size:12px; color:rgba(255,255,255,.6); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bar-track { flex:1; height:8px; background:rgba(255,255,255,.05); border-radius:5px; overflow:hidden; }
+.bar-fill { height:100%; background:linear-gradient(90deg,#22c55e,#4ade80); border-radius:5px; }
+.bar-num { flex:0 0 28px; text-align:right; font-size:12px; color:#4ade80; font-weight:500; }
+.eti-row { display:flex; align-items:flex-start; gap:10px; font-size:13px; color:rgba(255,255,255,.7); line-height:1.55; margin-bottom:12px; }
+.eti-ico { flex-shrink:0; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; margin-top:1px; }
+.eti-ico.ok { background:rgba(34,197,94,.12); color:#4ade80; }
+.eti-ico.bad { background:rgba(239,68,68,.12); color:rgba(252,165,165,.9); }
 
 @media (max-width:700px) {
   .page { padding:24px 16px; }
@@ -552,8 +761,10 @@ export default function MHTEVDirectory() {
     if (flatE) return flatE;
     const phoneE = validatePhone(form.phone.trim());
     if (phoneE) return phoneE;
-    if (!form.manufacturer)     return "Manufacturer is required.";
-    if (!form.vehicleModel)     return "Vehicle model is required.";
+    if (!form.manufacturer.trim()) return "Manufacturer is required.";
+    if (!form.vehicleModel.trim()) return "Vehicle model is required.";
+    const batE = validateBattery(form.batteryCapacity);
+    if (batE) return batE;
     const dup = records.find(r =>
       r.vehicleNumber.toUpperCase() === form.vehicleNumber.toUpperCase() && r.id !== excludeId
     );
@@ -642,6 +853,7 @@ export default function MHTEVDirectory() {
             email:         ["email","emailid","email_id","mail"],
             manufacturer:  ["manufacturer","make","brand","company","carmaker"],
             vehiclemodel:  ["vehiclemodel","vehicle_model","model","carmodel","evmodel"],
+            batterycapacity: ["batterycapacity","battery","battery_capacity","kwh","batterykwh","capacity"],
           };
           const list = aliases[name] || [name];
           const idx = hdrs.findIndex(h => list.includes(h));
@@ -669,6 +881,7 @@ export default function MHTEVDirectory() {
             email:         get("email"),
             manufacturer:  get("manufacturer"),
             vehicleModel:  get("vehiclemodel"),
+            batteryCapacity: get("batterycapacity"),
           };
 
           // Skip if every field is empty (completely blank row)
@@ -810,6 +1023,8 @@ export default function MHTEVDirectory() {
             <button className={"tab-btn" + (tab==="vehicles" ? " active" : "")} onClick={() => setTab("vehicles")}>
               <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoList /> All Vehicles</span>
             </button>
+            <button className={"tab-btn" + (tab==="dashboard" ? " active" : "")} onClick={() => setTab("dashboard")}>Dashboard</button>
+            <button className={"tab-btn" + (tab==="charging" ? " active" : "")} onClick={() => setTab("charging")}>Charging</button>
             <button className={"tab-btn" + (tab==="register" ? " active" : "")} onClick={() => setTab("register")}>Register</button>
             {isAdmin && (
               <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")}
@@ -863,6 +1078,7 @@ export default function MHTEVDirectory() {
                   <div className="rf full"><label>Owner Name</label><span>{lookupResult.ownerName}</span></div>
                   <div className="rf"><label>Manufacturer</label><span>{lookupResult.manufacturer || "—"}</span></div>
                   <div className="rf"><label>Model</label><span>{lookupResult.vehicleModel || "—"}</span></div>
+                  <div className="rf"><label>Battery</label><span>{lookupResult.batteryCapacity ? lookupResult.batteryCapacity + " kWh" : "—"}</span></div>
                   <div className="rf"><label>Tower</label><span>{lookupResult.tower}</span></div>
                   <div className="rf"><label>Flat No.</label><span>{lookupResult.flat}</span></div>
                   <div className="rf"><label>Phone</label><span>{lookupResult.phone}</span></div>
@@ -895,6 +1111,12 @@ export default function MHTEVDirectory() {
           </div>
         )}
 
+        {/* ══════ DASHBOARD ══════ */}
+        {tab === "dashboard" && <Dashboard records={records} />}
+
+        {/* ══════ CHARGING ETIQUETTE ══════ */}
+        {tab === "charging" && <ChargingEtiquette />}
+
         {/* ══════ REGISTER (public — add & edit, NO delete) ══════ */}
         {tab === "register" && (
           <div className="reg-wrap">
@@ -921,9 +1143,10 @@ export default function MHTEVDirectory() {
                 <VehicleForm
                   form={regForm}
                   onChange={setRegForm}
-                  onManufacturerChange={v => setRegForm(f => ({ ...f, manufacturer: v, vehicleModel: "" }))}
+                  onManufacturerChange={v => setRegForm(f => ({ ...f, manufacturer: v, vehicleModel: "", batteryCapacity: "" }))}
                   vnErr={regVnErr}
                   setVnErr={setRegVnErr}
+                  idPrefix="reg"
                 />
                 {regError && <div className="f-err" style={{ marginTop:12 }}>⚠ {regError}</div>}
                 <div className="f-actions" style={{ marginTop:16 }}>
@@ -987,7 +1210,7 @@ export default function MHTEVDirectory() {
               <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={handleCSV} />
             </div>
 
-            <div className="csv-hint">CSV columns (all optional — at least one value per row): <span>vehicleNumber, ownerName, tower, flat, phone, email, manufacturer, vehicleModel</span> · Duplicate vehicle numbers are skipped automatically.</div>
+            <div className="csv-hint">CSV columns (all optional — at least one value per row): <span>vehicleNumber, ownerName, tower, flat, phone, email, manufacturer, vehicleModel, batteryCapacity</span> · Duplicate vehicle numbers are skipped automatically.</div>
             {csvMsg && <div className={"msg " + (csvMsg.startsWith("✓") ? "ok" : "bad")}>{csvMsg}</div>}
 
             <VehicleTable records={records} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
@@ -1009,9 +1232,10 @@ export default function MHTEVDirectory() {
             <VehicleForm
               form={editForm}
               onChange={setEditForm}
-              onManufacturerChange={v => setEditForm(f => ({ ...f, manufacturer: v, vehicleModel: "" }))}
+              onManufacturerChange={v => setEditForm(f => ({ ...f, manufacturer: v, vehicleModel: "", batteryCapacity: "" }))}
               vnErr={editVnErr}
               setVnErr={setEditVnErr}
+              idPrefix="edit"
             />
             {editError && <div className="f-err" style={{ marginTop:12 }}>⚠ {editError}</div>}
             <div className="f-actions" style={{ marginTop:16 }}>

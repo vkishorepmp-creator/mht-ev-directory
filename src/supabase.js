@@ -27,6 +27,7 @@ function toRecord(r) {
     email: r.email || "",
     manufacturer: r.manufacturer || "",
     vehicleModel: r.vehicle_model || "",
+    batteryCapacity: r.battery_capacity ?? "",
   };
 }
 
@@ -41,6 +42,8 @@ function toRow(rec) {
     email: rec.email || "",
     manufacturer: rec.manufacturer || "",
     vehicle_model: rec.vehicleModel || "",
+    battery_capacity: rec.batteryCapacity === "" || rec.batteryCapacity == null
+      ? null : Number(rec.batteryCapacity),
   };
 }
 
