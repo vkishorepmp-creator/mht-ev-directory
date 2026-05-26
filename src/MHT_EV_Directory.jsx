@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 
 // ─── Supabase Config ──────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://krcaijliviwxempwqxrz.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtyY2Fpamxpdml3eGVtcHdxeHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MzI2MTIsImV4cCI6MjA5NTIwODYxMn0.tSqjzLCE4PtQWFvjFSCdEk9R7LQOAnnjz5fcBg1aQR4";
+// Configured via environment (.env locally, Vercel project settings in prod).
+// Never hardcode the key — it ships to the browser, so rotation must be cheap.
+// See .env.example and OWNER_SETUP.md.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const TABLE = "ev_records";
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error("Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — see .env.example");
+}
 
 const headers = {
   "Content-Type": "application/json",
@@ -75,26 +82,17 @@ async function sbUpdate(id, rec) {
     manufacturer: rec.manufacturer || "",
     vehicle_model: rec.vehicleModel || "",
   };
-  console.log("sbUpdate called with:", { id, body });
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
     method: "PATCH", headers, body: JSON.stringify(body),
   });
-  console.log("sbUpdate response status:", res.status, res.statusText);
   if (!res.ok) {
     let msg = res.statusText;
-    let errorDetails = null;
-    try { 
-      const b = await res.json(); 
-      errorDetails = b;
+    try {
+      const b = await res.json();
       msg = b.message || b.hint || b.error || b.details || msg;
-      console.error("sbUpdate error details:", errorDetails);
-      console.error("Full error object:", JSON.stringify(b, null, 2));
-    } catch (e) {
-      console.error("Failed to parse error response:", e);
-    }
+    } catch {}
     throw new Error(`HTTP ${res.status} — ${msg}`);
   }
-  console.log("sbUpdate successful");
 }
 
 async function sbDelete(id) {
@@ -171,8 +169,19 @@ function getResetA()  { return localStorage.getItem(RESET_A_KEY) || ""; }
 
 function validateVN(v) {
   if (!v) return "Vehicle number is required.";
+  if (!/^[A-Z0-9]+$/.test(v)) return "Vehicle number must be letters and digits only.";
   if (v.length < 5) return "Vehicle number is too short.";
-  if (!/\d{4}$/.test(v)) return "Last 4 characters must be digits (e.g. MH12AB1234).";
+  if (v.length > 11) return "Vehicle number is too long.";
+  return "";
+}
+function validatePhone(v) {
+  if (!v) return "Phone number is required.";
+  if (!/^\d{10}$/.test(v)) return "Phone must be exactly 10 digits.";
+  return "";
+}
+function validateFlat(v) {
+  if (!v) return "Flat number is required.";
+  if (!/^\d{3,4}$/.test(v)) return "Flat number must be 3 or 4 digits.";
   return "";
 }
 
@@ -213,7 +222,7 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
           value={form.vehicleNumber} maxLength={12}
           onChange={handleVnInput} placeholder="e.g. MH12AB1234" />
         <span className={"field-hint" + (vnErr ? " hint-err" : "")}>
-          {vnErr || "Last 4 characters must be digits — e.g. MH12AB1234"}
+          {vnErr || "Letters and digits only — e.g. MH12AB1234"}
         </span>
       </div>
       <div className="fg full">
@@ -224,9 +233,12 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
       </div>
       <div className="fg">
         <label>Phone <span className="req">*</span></label>
-        <input className="fi" value={form.phone}
-          onChange={e => onChange({ ...form, phone: e.target.value })}
+        <input className={"fi" + (form.phone && validatePhone(form.phone) ? " fi-err" : "")}
+          inputMode="numeric" maxLength={10} value={form.phone}
+          onChange={e => onChange({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
           placeholder="10-digit mobile" />
+        {form.phone && validatePhone(form.phone) &&
+          <span className="field-hint hint-err">{validatePhone(form.phone)}</span>}
       </div>
       <div className="fg">
         <label>Email</label>
@@ -246,9 +258,12 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
       </div>
       <div className="fg">
         <label>Flat No. <span className="req">*</span></label>
-        <input className="fi" value={form.flat}
-          onChange={e => onChange({ ...form, flat: e.target.value })}
+        <input className={"fi" + (form.flat && validateFlat(form.flat) ? " fi-err" : "")}
+          inputMode="numeric" maxLength={4} value={form.flat}
+          onChange={e => onChange({ ...form, flat: e.target.value.replace(/\D/g, "").slice(0, 4) })}
           placeholder="e.g. 304" />
+        {form.flat && validateFlat(form.flat) &&
+          <span className="field-hint hint-err">{validateFlat(form.flat)}</span>}
       </div>
       <hr className="form-divider" />
       <div className="sec-label">Vehicle Details</div>
@@ -570,9 +585,6 @@ export default function MHTEVDirectory() {
     setLoading(true); setDbError("");
     try {
       const data = await sbFetch();
-      console.log("Loaded records:", data.length);
-      console.log("Sample record structure:", data.length > 0 ? data[0] : "No records");
-      console.log("All record IDs:", data.map(r => ({ id: r.id, vehicleNumber: r.vehicleNumber })));
       setRecords(data);
     } catch (err) {
       setDbError("Could not connect to database — " + (err.message || "unknown error") + ". Check your internet connection and Supabase RLS settings.");
@@ -588,9 +600,15 @@ export default function MHTEVDirectory() {
 
   // ── Lookup
   function handleLookup() {
-    const q = query.trim().toUpperCase();
+    const q = query.trim().toLowerCase();
     if (!q) return;
-    setLookupResult(records.find(r => r.vehicleNumber.toUpperCase() === q) || null);
+    // Forgiving match: exact vehicle number wins; else first substring hit
+    // across vehicle number, owner name, or flat (parity with All Vehicles).
+    const exact = records.find(r => r.vehicleNumber.toLowerCase() === q);
+    const hit = exact || records.find(r =>
+      [r.vehicleNumber, r.ownerName, r.flat].some(v => v && v.toLowerCase().includes(q))
+    );
+    setLookupResult(hit || null);
     setLookupDone(true);
   }
 
@@ -656,8 +674,10 @@ export default function MHTEVDirectory() {
     if (vnE) return vnE;
     if (!form.ownerName.trim()) return "Owner name is required.";
     if (!form.tower)            return "Tower is required.";
-    if (!form.flat.trim())      return "Flat number is required.";
-    if (!form.phone.trim())     return "Phone number is required.";
+    const flatE = validateFlat(form.flat.trim());
+    if (flatE) return flatE;
+    const phoneE = validatePhone(form.phone.trim());
+    if (phoneE) return phoneE;
     if (!form.manufacturer)     return "Manufacturer is required.";
     if (!form.vehicleModel)     return "Vehicle model is required.";
     const dup = records.find(r =>
@@ -686,11 +706,9 @@ export default function MHTEVDirectory() {
   // ── Admin edit (can edit AND delete)
   function openEdit(r) {
     if (!r || !r.id) {
-      console.error("Cannot edit record: missing ID", r);
       flash("Cannot edit this record - missing ID", "err");
       return;
     }
-    console.log("Opening edit for record:", r.id, r);
     setEditRec(r); setEditForm({ ...r }); setEditVnErr(""); setEditError(""); setShowEdit(true);
   }
   async function handleEditSave() {
@@ -702,15 +720,12 @@ export default function MHTEVDirectory() {
     if (err) { setEditError(err); return; }
     setEditSaving(true); setEditError("");
     try {
-      console.log("Attempting to update record:", editRec.id, editForm);
       await sbUpdate(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
-      console.log("Update successful");
       setRecords(prev => prev.map(r =>
         r.id === editRec.id ? { ...editForm, id: r.id, vehicleNumber: editForm.vehicleNumber.toUpperCase() } : r
       ));
       setShowEdit(false); flash("Record updated.");
     } catch (error) {
-      console.error("Update failed with error:", error);
       const errorMessage = error?.message || error?.toString() || "Failed to save. Please try again.";
       setEditError(errorMessage);
     } finally {
@@ -901,7 +916,7 @@ export default function MHTEVDirectory() {
               <p className="lookup-p">Enter a vehicle registration number to get owner & location details instantly</p>
             </div>
             <div className="search-box">
-              <input className="search-inp" placeholder="Enter vehicle number…" value={query}
+              <input className="search-inp" placeholder="Vehicle number, owner name, or flat…" value={query}
                 onChange={e => { setQuery(e.target.value); setLookupDone(false); }}
                 onKeyDown={e => e.key === "Enter" && handleLookup()} />
               <button className="btn-green" onClick={handleLookup}><IcoSearch /> Search</button>
