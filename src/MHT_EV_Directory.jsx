@@ -170,8 +170,13 @@ function getResetA()  { return localStorage.getItem(RESET_A_KEY) || ""; }
 function validateVN(v) {
   if (!v) return "Vehicle number is required.";
   if (!/^[A-Z0-9]+$/.test(v)) return "Vehicle number must be letters and digits only.";
-  if (v.length < 5) return "Vehicle number is too short.";
-  if (v.length > 11) return "Vehicle number is too long.";
+  // Indian registration formats (no spaces — input is already stripped):
+  //  Standard: SS DD L(1-3) NNNN   e.g. MH12AB1234, KA01C0001, DL3CAB1234
+  //  Bharat:   YY BH NNNN L(1-2)   e.g. 22BH1234AA
+  const standard = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}$/;
+  const bharat   = /^\d{2}BH\d{4}[A-Z]{1,2}$/;
+  if (!standard.test(v) && !bharat.test(v))
+    return "Enter a valid Indian number, e.g. MH12AB1234 or 22BH1234AA.";
   return "";
 }
 function validatePhone(v) {
