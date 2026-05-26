@@ -82,8 +82,52 @@ const EV_MAKERS = [
   ]},
 ];
 
+// Indian-market electric two-wheelers with battery capacity (kWh). Approximate
+// public figures (2024-25); residents can type a model not listed here.
+const EV_BIKES = [
+  { name: "Ola Electric", models: [
+    { name: "S1 Pro", battery: [4, 5.3] },
+    { name: "S1 Air", battery: [3, 4] },
+    { name: "S1 X", battery: [2, 3, 4] },
+  ]},
+  { name: "Ather Energy", models: [
+    { name: "450X", battery: [3.7] },
+    { name: "450 Apex", battery: [3.7] },
+    { name: "450S", battery: [2.9] },
+    { name: "Rizta", battery: [2.9, 3.7] },
+  ]},
+  { name: "TVS Motor", models: [
+    { name: "iQube", battery: [3.04, 3.4, 5.1] },
+    { name: "X", battery: [10.2] },
+  ]},
+  { name: "Bajaj Auto", models: [
+    { name: "Chetak", battery: [3.2] },
+  ]},
+  { name: "Hero Vida", models: [
+    { name: "V1", battery: [3.44, 3.94] },
+    { name: "VX2", battery: [3.4] },
+  ]},
+  { name: "Ampere", models: [
+    { name: "Nexus", battery: [3, 3.7] },
+    { name: "Magnus", battery: [2.3] },
+  ]},
+  { name: "Revolt Motors", models: [
+    { name: "RV400", battery: [3.24] },
+    { name: "RV1", battery: [2.2, 3.24] },
+  ]},
+  { name: "Ultraviolette", models: [
+    { name: "F77", battery: [7.1, 10.3] },
+  ]},
+  { name: "Simple Energy", models: [
+    { name: "Simple One", battery: [5] },
+  ]},
+  { name: "River", models: [
+    { name: "Indie", battery: [4] },
+  ]},
+];
+
 const TOWERS = [1,2,3,4,5,6,7,8,9];
-const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"", batteryCapacity:"" };
+const EMPTY_FORM = { vehicleType:"car", vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"", batteryCapacity:"" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function validateVN(v) {
@@ -135,10 +179,16 @@ function IcoRefresh(){ return <svg width="15" height="15" viewBox="0 0 24 24" fi
 
 // ─── Vehicle Form ─────────────────────────────────────────────────────────────
 function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr, idPrefix = "f" }) {
-  const maker     = EV_MAKERS.find(m => m.name === form.manufacturer);
+  const catalogue = form.vehicleType === "bike" ? EV_BIKES : EV_MAKERS;
+  const maker     = catalogue.find(m => m.name === form.manufacturer);
   const modelList = maker?.models || [];
   const modelEntry = modelList.find(m => m.name === form.vehicleModel);
   const batteryOpts = modelEntry?.battery || [];
+
+  function setType(t) {
+    if (t === form.vehicleType) return;
+    onChange({ ...form, vehicleType: t, manufacturer: "", vehicleModel: "", batteryCapacity: "" });
+  }
 
   function handleModelChange(v) {
     const me = modelList.find(m => m.name === v);
@@ -209,12 +259,19 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr, id
       <hr className="form-divider" />
       <div className="sec-label">Vehicle Details</div>
       <div className="fg full">
+        <label>Vehicle Type <span className="req">*</span></label>
+        <div className="type-toggle">
+          <button type="button" className={form.vehicleType === "car" ? "active" : ""} onClick={() => setType("car")}>🚗 Car</button>
+          <button type="button" className={form.vehicleType === "bike" ? "active" : ""} onClick={() => setType("bike")}>🛵 Bike</button>
+        </div>
+      </div>
+      <div className="fg full">
         <label>Manufacturer <span className="req">*</span></label>
         <input className="fi" list={idPrefix + "-mfr"} value={form.manufacturer}
           onChange={e => onManufacturerChange(e.target.value)}
           placeholder="Select or type manufacturer" />
         <datalist id={idPrefix + "-mfr"}>
-          {EV_MAKERS.map(m => <option key={m.name} value={m.name} />)}
+          {catalogue.map(m => <option key={m.name} value={m.name} />)}
         </datalist>
       </div>
       <div className="fg">
@@ -244,9 +301,11 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr, id
 // ─── Vehicle Table ────────────────────────────────────────────────────────────
 function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const filtered = records.filter(r =>
-    !search || [r.vehicleNumber, r.ownerName, r.tower, r.flat, r.phone, r.manufacturer, r.vehicleModel]
-      .some(v => v && v.toLowerCase().includes(search.toLowerCase()))
+    (typeFilter === "all" || (r.vehicleType || "car") === typeFilter) &&
+    (!search || [r.vehicleNumber, r.ownerName, r.tower, r.flat, r.phone, r.manufacturer, r.vehicleModel]
+      .some(v => v && v.toLowerCase().includes(search.toLowerCase())))
   );
   // A row is editable by an admin, or by the resident who owns it.
   const canEdit = r => isAdmin || (currentUserId && r.userId === currentUserId);
@@ -267,13 +326,18 @@ function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
           placeholder="Search vehicle, name, tower…"
           value={search} onChange={e => setSearch(e.target.value)} />
       </div>
+      <div className="filter-toggle">
+        <button className={typeFilter === "all" ? "active" : ""} onClick={() => setTypeFilter("all")}>All</button>
+        <button className={typeFilter === "car" ? "active" : ""} onClick={() => setTypeFilter("car")}>🚗 Cars</button>
+        <button className={typeFilter === "bike" ? "active" : ""} onClick={() => setTypeFilter("bike")}>🛵 Bikes</button>
+      </div>
       <div className="tbl-wrap">
         {filtered.length === 0
           ? <div className="empty">{search ? "No records match." : "No vehicles registered yet."}</div>
           : <table>
               <thead>
                 <tr>
-                  <th>Vehicle No.</th><th>Owner</th><th>Tower</th><th>Flat</th>
+                  <th>Type</th><th>Vehicle No.</th><th>Owner</th><th>Tower</th><th>Flat</th>
                   <th>Phone</th><th>Manufacturer</th><th>Model</th>
                   {showActionsCol && <th></th>}
                 </tr>
@@ -281,6 +345,7 @@ function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
               <tbody>
                 {filtered.map(r => (
                   <tr key={r.id}>
+                    <td title={r.vehicleType === "bike" ? "Bike" : "Car"}>{r.vehicleType === "bike" ? "🛵" : "🚗"}</td>
                     <td className="vn">{r.vehicleNumber}</td>
                     <td>{r.ownerName}</td>
                     <td><span className="badge">{r.tower}</span></td>
@@ -346,6 +411,8 @@ function Dashboard({ records }) {
     .filter(r => r.createdAt)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 5);
+  const cars  = records.filter(r => (r.vehicleType || "car") === "car").length;
+  const bikes = records.filter(r => r.vehicleType === "bike").length;
 
   return (
     <div>
@@ -356,8 +423,9 @@ function Dashboard({ records }) {
       </div>
       <div className="stat-row" style={{ marginTop:24 }}>
         <div className="stat-chip"><span className="stat-num">{records.length}</span><span className="stat-lbl">Total EVs</span></div>
+        <div className="stat-chip"><span className="stat-num">{cars}</span><span className="stat-lbl">🚗 Cars</span></div>
+        <div className="stat-chip"><span className="stat-num">{bikes}</span><span className="stat-lbl">🛵 Bikes</span></div>
         <div className="stat-chip"><span className="stat-num">{byBrand.length}</span><span className="stat-lbl">Brands</span></div>
-        <div className="stat-chip"><span className="stat-num">{byModel.length}</span><span className="stat-lbl">Models</span></div>
         <div className="stat-chip"><span className="stat-num">{Math.round(totalKwh)}</span><span className="stat-lbl">Total kWh</span></div>
       </div>
       <div className="dash-grid">
@@ -767,6 +835,12 @@ td { padding:12px 14px; font-size:13px; color:rgba(255,255,255,.7); }
 @keyframes up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 @keyframes fi  { from { opacity:0; } to { opacity:1; } }
 
+.type-toggle { display:flex; gap:8px; }
+.type-toggle button { flex:1; padding:11px; border-radius:8px; cursor:pointer; font-family:'DM Mono',monospace; font-size:12px; letter-spacing:1px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.5); transition:all .2s; }
+.type-toggle button.active { background:rgba(34,197,94,.12); border-color:rgba(74,222,128,.5); color:#4ade80; }
+.filter-toggle { display:flex; gap:6px; margin-bottom:16px; }
+.filter-toggle button { padding:7px 16px; border-radius:7px; cursor:pointer; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.45); transition:all .2s; }
+.filter-toggle button.active { background:rgba(34,197,94,.1); border-color:rgba(74,222,128,.4); color:#4ade80; }
 .contact-row { display:flex; gap:10px; margin-top:20px; flex-wrap:wrap; }
 .contact-btn { text-decoration:none; padding:9px 18px; border-radius:8px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:rgba(255,255,255,.7); transition:all .2s; }
 .contact-btn:hover { border-color:rgba(74,222,128,.4); color:#4ade80; }
@@ -1230,6 +1304,7 @@ export default function MHTEVDirectory() {
             <button className={"tab-btn" + (tab==="vehicles" ? " active" : "")} onClick={() => setTab("vehicles")}>
               <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoList /> All Vehicles</span>
             </button>
+            <button className={"tab-btn" + (tab==="mine" ? " active" : "")} onClick={() => setTab("mine")}>My Vehicles</button>
             <button className={"tab-btn" + (tab==="dashboard" ? " active" : "")} onClick={() => setTab("dashboard")}>Dashboard</button>
             <button className={"tab-btn" + (tab==="charging" ? " active" : "")} onClick={() => setTab("charging")}>Charging</button>
             <button className={"tab-btn" + (tab==="board" ? " active" : "")} onClick={() => setTab("board")}>Board</button>
@@ -1282,7 +1357,7 @@ export default function MHTEVDirectory() {
             </div>
             {lookupDone && lookupResult && (
               <div className="result-card">
-                <div className="result-vn"><IcoCar /> {lookupResult.vehicleNumber}</div>
+                <div className="result-vn">{lookupResult.vehicleType === "bike" ? "🛵" : <IcoCar />} {lookupResult.vehicleNumber}</div>
                 <div className="result-grid">
                   <div className="rf full"><label>Owner Name</label><span>{lookupResult.ownerName}</span></div>
                   <div className="rf"><label>Manufacturer</label><span>{lookupResult.manufacturer || "—"}</span></div>
@@ -1324,6 +1399,27 @@ export default function MHTEVDirectory() {
             </div>
           </div>
         )}
+
+        {/* ══════ MY VEHICLES ══════ */}
+        {tab === "mine" && (() => {
+          const mine = records.filter(r => r.userId === session.user.id);
+          return (
+            <div>
+              <div className="lookup-hero" style={{ paddingBottom:8 }}>
+                <div className="eyebrow">Your Registrations</div>
+                <h1 className="lookup-h1" style={{ fontSize:30 }}>My <span>Vehicles</span></h1>
+                <p className="lookup-p">Your registered EVs. Edit any of them, or add another.</p>
+              </div>
+              <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+                <button className="btn-green" onClick={() => setTab("register")}><IcoPlus /> Add an EV</button>
+              </div>
+              {mine.length === 0
+                ? <div className="empty">You haven't registered any EVs yet. Use <strong style={{ color:"rgba(74,222,128,.6)" }}>Register</strong> to add one.</div>
+                : <VehicleTable records={mine} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
+              }
+            </div>
+          );
+        })()}
 
         {/* ══════ DASHBOARD ══════ */}
         {tab === "dashboard" && <Dashboard records={records} />}
