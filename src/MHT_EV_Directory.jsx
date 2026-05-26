@@ -1,146 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-
-// ─── Supabase Config ──────────────────────────────────────────────────────────
-// Configured via environment (.env locally, Vercel project settings in prod).
-// Never hardcode the key — it ships to the browser, so rotation must be cheap.
-// See .env.example and OWNER_SETUP.md.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const TABLE = "ev_records";
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error("Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — see .env.example");
-}
-
-const headers = {
-  "Content-Type": "application/json",
-  "apikey": SUPABASE_KEY,
-  "Authorization": `Bearer ${SUPABASE_KEY}`,
-  "Prefer": "return=representation",
-};
-
-// ─── Supabase API helpers ─────────────────────────────────────────────────────
-async function sbFetch() {
-  let res;
-  try {
-    res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=created_at.asc`, { headers });
-  } catch (netErr) {
-    throw new Error("Network error — " + netErr.message);
-  }
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-  const data = await res.json();
-  // Normalize snake_case → camelCase
-  return data.map(r => ({
-    id: r.id,
-    vehicleNumber: r.vehicle_number,
-    ownerName: r.owner_name,
-    tower: r.tower,
-    flat: r.flat,
-    phone: r.phone,
-    email: r.email || "",
-    manufacturer: r.manufacturer || "",
-    vehicleModel: r.vehicle_model || "",
-  }));
-}
-
-async function sbInsert(rec) {
-  const body = {
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-    method: "POST", headers, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-  const data = await res.json();
-  const r = data[0];
-  return { id: r.id, vehicleNumber: r.vehicle_number, ownerName: r.owner_name, tower: r.tower, flat: r.flat, phone: r.phone, email: r.email || "", manufacturer: r.manufacturer || "", vehicleModel: r.vehicle_model || "" };
-}
-
-async function sbUpdate(id, rec) {
-  const body = {
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-    method: "PATCH", headers, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const b = await res.json();
-      msg = b.message || b.hint || b.error || b.details || msg;
-    } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-}
-
-async function sbDelete(id) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-    method: "DELETE", headers,
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-}
-
-async function sbBulkInsert(recs) {
-  const body = recs.map(rec => ({
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  }));
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-    method: "POST", headers, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-}
+import { fetchRecords, insertRecord, updateRecord, deleteRecord, bulkInsert } from "./supabase";
+import { signUp, signIn, signOut, getSession, onAuthChange, getMyProfile, listPending, setApproval } from "./auth";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const PW_KEY      = "mht_admin_pw";
-const RESET_Q_KEY = "mht_reset_q";
-const RESET_A_KEY = "mht_reset_a";
-const DEFAULT_PW  = "admin123";
-
-const SECURITY_QUESTIONS = [
-  "What is the name of your society?",
-  "What is the street/road name of your society?",
-  "In which city is your society located?",
-  "What is your society registration number?",
-  "What is the name of the society chairman?",
-];
-
 const EV_MAKERS = [
   { name: "Tata Motors",            models: ["Tiago EV","Tigor EV","Punch EV","Nexon EV","Curvv EV"] },
   { name: "JSW MG Motor India",     models: ["Comet EV","Windsor EV","ZS EV"] },
@@ -163,10 +25,6 @@ const TOWERS = [1,2,3,4,5,6,7,8,9];
 const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function getAdminPw() { return localStorage.getItem(PW_KEY) || DEFAULT_PW; }
-function getResetQ()  { return localStorage.getItem(RESET_Q_KEY) || ""; }
-function getResetA()  { return localStorage.getItem(RESET_A_KEY) || ""; }
-
 function validateVN(v) {
   if (!v) return "Vehicle number is required.";
   if (!/^[A-Z0-9]+$/.test(v)) return "Vehicle number must be letters and digits only.";
@@ -294,12 +152,15 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
 }
 
 // ─── Vehicle Table ────────────────────────────────────────────────────────────
-function VehicleTable({ records, showActions, onEdit, onDelete }) {
+function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
   const [search, setSearch] = useState("");
   const filtered = records.filter(r =>
     !search || [r.vehicleNumber, r.ownerName, r.tower, r.flat, r.phone, r.manufacturer, r.vehicleModel]
       .some(v => v && v.toLowerCase().includes(search.toLowerCase()))
   );
+  // A row is editable by an admin, or by the resident who owns it.
+  const canEdit = r => isAdmin || (currentUserId && r.userId === currentUserId);
+  const showActionsCol = isAdmin || !!currentUserId;
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12, marginBottom:16 }}>
@@ -309,7 +170,7 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
           </div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>
             {records.length} EV{records.length !== 1 ? "s" : ""} registered
-            {!showActions && " · Check before adding yours"}
+            {!isAdmin && " · You can edit your own entry"}
           </div>
         </div>
         <input className="adm-search" style={{ maxWidth:280, flex:"none" }}
@@ -324,7 +185,7 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
                 <tr>
                   <th>Vehicle No.</th><th>Owner</th><th>Tower</th><th>Flat</th>
                   <th>Phone</th><th>Manufacturer</th><th>Model</th>
-                  {showActions && <th></th>}
+                  {showActionsCol && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -337,11 +198,11 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
                     <td>{r.phone}</td>
                     <td style={{ color:"rgba(255,255,255,0.45)", fontSize:12 }}>{r.manufacturer || "—"}</td>
                     <td style={{ color:"rgba(255,255,255,0.55)", fontSize:12 }}>{r.vehicleModel || "—"}</td>
-                    {showActions && (
+                    {showActionsCol && (
                       <td>
                         <div className="acts">
-                          <button className="ico-btn" onClick={() => onEdit(r)} title="Edit"><IcoEdit /></button>
-                          <button className="ico-btn del" onClick={() => onDelete(r.id)} title="Delete"><IcoDelete /></button>
+                          {canEdit(r) && <button className="ico-btn" onClick={() => onEdit(r)} title="Edit"><IcoEdit /></button>}
+                          {isAdmin && <button className="ico-btn del" onClick={() => onDelete(r.id)} title="Delete"><IcoDelete /></button>}
                         </div>
                       </td>
                     )}
@@ -531,33 +392,29 @@ export default function MHTEVDirectory() {
   const [loading, setLoading]   = useState(true);
   const [dbError, setDbError]   = useState("");
   const [tab, setTab]           = useState("lookup");
-  const [isAdmin, setIsAdmin]   = useState(false);
   const [toast, setToast]       = useState({ msg:"", type:"ok" });
 
-  // ── Admin login
-  const [loginView, setLoginView] = useState("login");
-  const [adminPw, setAdminPw]     = useState("");
-  const [showPw, setShowPw]       = useState(false);
-  const [pwError, setPwError]     = useState("");
+  // ── Auth / profile (the React flags are presentation only; RLS enforces)
+  const [session, setSession]         = useState(null);
+  const [profile, setProfile]         = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // ── Forgot password
-  const [fStep, setFStep]       = useState(1);
-  const [fAnswer, setFAnswer]   = useState("");
-  const [fNewPw, setFNewPw]     = useState("");
-  const [fConfirm, setFConfirm] = useState("");
-  const [fErr, setFErr]         = useState("");
-  const [fShowPw, setFShowPw]   = useState(false);
+  const isAdmin    = profile?.role === "admin";
+  const isApproved = isAdmin || profile?.status === "approved";
 
-  // ── Reset password modal
-  const [showReset, setShowReset] = useState(false);
-  const [rStep, setRStep]         = useState(1);
-  const [rCurrent, setRCurrent]   = useState("");
-  const [rNew, setRNew]           = useState("");
-  const [rConfirm, setRConfirm]   = useState("");
-  const [rQ, setRQ]               = useState("");
-  const [rA, setRA]               = useState("");
-  const [rErr, setRErr]           = useState("");
-  const [rShowPw, setRShowPw]     = useState(false);
+  // ── Auth form
+  const [authMode, setAuthMode]     = useState("login"); // "login" | "signup"
+  const [authEmail, setAuthEmail]   = useState("");
+  const [authPw, setAuthPw]         = useState("");
+  const [authName, setAuthName]     = useState("");
+  const [authFlat, setAuthFlat]     = useState("");
+  const [authErr, setAuthErr]       = useState("");
+  const [authBusy, setAuthBusy]     = useState(false);
+  const [showPw, setShowPw]         = useState(false);
+  const [signupDone, setSignupDone] = useState(false);
+
+  // ── Admin approvals
+  const [pendingList, setPendingList] = useState([]);
 
   // ── Lookup
   const [query, setQuery]               = useState("");
@@ -571,7 +428,7 @@ export default function MHTEVDirectory() {
   const [regSuccess, setRegSuccess] = useState(false);
   const [regSaving, setRegSaving]   = useState(false);
 
-  // ── Admin edit
+  // ── Edit (admin: any record; resident: own record)
   const [editRec, setEditRec]     = useState(null);
   const [editForm, setEditForm]   = useState(EMPTY_FORM);
   const [editVnErr, setEditVnErr] = useState("");
@@ -583,16 +440,42 @@ export default function MHTEVDirectory() {
   const [csvMsg, setCsvMsg] = useState("");
   const fileRef = useRef();
 
-  // ── Load from Supabase on mount
-  useEffect(() => { loadRecords(); }, []);
+  // ── Auth bootstrap: read session once, then subscribe to changes
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      setSession(await getSession());
+      setAuthChecked(true);
+      unsub = onAuthChange(s => setSession(s));
+    })();
+    return () => unsub();
+  }, []);
+
+  // When the session changes, (re)load profile and — if approved — records
+  useEffect(() => {
+    if (!session) { setProfile(null); setRecords([]); setLoading(false); return; }
+    (async () => {
+      try {
+        const p = await getMyProfile();
+        setProfile(p);
+        if (p && (p.status === "approved" || p.role === "admin")) {
+          await loadRecords();
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        setDbError(err.message || "Could not load your profile.");
+        setLoading(false);
+      }
+    })();
+  }, [session]);
 
   async function loadRecords() {
     setLoading(true); setDbError("");
     try {
-      const data = await sbFetch();
-      setRecords(data);
+      setRecords(await fetchRecords());
     } catch (err) {
-      setDbError("Could not connect to database — " + (err.message || "unknown error") + ". Check your internet connection and Supabase RLS settings.");
+      setDbError("Could not load records — " + (err.message || "unknown error") + ".");
     } finally {
       setLoading(false);
     }
@@ -617,60 +500,46 @@ export default function MHTEVDirectory() {
     setLookupDone(true);
   }
 
-  // ── Admin login
-  function handleLogin() {
-    if (adminPw === getAdminPw()) {
-      setIsAdmin(true); setAdminPw(""); setPwError(""); setLoginView("login");
-    } else {
-      setPwError("Incorrect password. Try again.");
+  // ── Auth actions
+  async function handleAuth() {
+    setAuthErr(""); setAuthBusy(true);
+    try {
+      if (authMode === "signup") {
+        if (!authName.trim()) throw new Error("Please enter your name.");
+        const flatE = validateFlat(authFlat.trim());
+        if (flatE) throw new Error(flatE);
+        if (authPw.length < 6) throw new Error("Password must be at least 6 characters.");
+        await signUp({ email: authEmail.trim(), password: authPw, fullName: authName.trim(), flat: authFlat.trim() });
+        setSignupDone(true);
+      } else {
+        await signIn({ email: authEmail.trim(), password: authPw });
+        // session updates via onAuthChange → profile + records load
+      }
+      setAuthPw("");
+    } catch (err) {
+      setAuthErr(err.message || "Authentication failed.");
+    } finally {
+      setAuthBusy(false);
     }
   }
-
-  // ── Forgot password
-  function startForgot() {
-    setFStep(1); setFAnswer(""); setFNewPw(""); setFConfirm(""); setFErr(""); setFShowPw(false);
-    setLoginView("forgot");
-  }
-  function forgotNext1() {
-    if (!getResetQ()) { setFErr("No security question set. Contact the society secretary."); return; }
-    setFErr(""); setFStep(2);
-  }
-  function forgotNext2() {
-    if (!fAnswer.trim()) { setFErr("Please enter your answer."); return; }
-    if (fAnswer.trim().toLowerCase() !== getResetA().toLowerCase()) { setFErr("Answer is incorrect."); return; }
-    setFErr(""); setFStep(3);
-  }
-  function forgotFinish() {
-    if (!fNewPw) { setFErr("New password is required."); return; }
-    if (fNewPw.length < 6) { setFErr("Password must be at least 6 characters."); return; }
-    if (fNewPw !== fConfirm) { setFErr("Passwords do not match."); return; }
-    localStorage.setItem(PW_KEY, fNewPw);
-    setLoginView("login"); setAdminPw("");
-    flash("Password reset. Please log in with your new password.");
+  async function handleSignOut() {
+    await signOut();
+    setProfile(null); setTab("lookup"); setLookupResult(null); setLookupDone(false);
   }
 
-  // ── Reset password (logged in)
-  function openReset() {
-    setRStep(1); setRCurrent(""); setRNew(""); setRConfirm("");
-    setRQ(getResetQ()); setRA(""); setRErr(""); setRShowPw(false);
-    setShowReset(true);
+  // ── Admin approvals
+  async function loadPending() {
+    try { setPendingList(await listPending()); }
+    catch (err) { flash(err.message || "Could not load pending list.", "err"); }
   }
-  function resetNext1() {
-    if (!rCurrent) { setRErr("Enter your current password."); return; }
-    if (rCurrent !== getAdminPw()) { setRErr("Current password is incorrect."); return; }
-    setRErr(""); setRStep(2);
-  }
-  function resetSave() {
-    if (!rNew) { setRErr("New password is required."); return; }
-    if (rNew.length < 6) { setRErr("Password must be at least 6 characters."); return; }
-    if (rNew !== rConfirm) { setRErr("Passwords do not match."); return; }
-    if (!rQ) { setRErr("Please choose a security question."); return; }
-    if (!rA.trim()) { setRErr("Please provide an answer to the security question."); return; }
-    localStorage.setItem(PW_KEY, rNew);
-    localStorage.setItem(RESET_Q_KEY, rQ);
-    localStorage.setItem(RESET_A_KEY, rA.trim().toLowerCase());
-    setShowReset(false);
-    flash("Password & security question updated.");
+  async function decide(id, status) {
+    try {
+      await setApproval(id, status);
+      setPendingList(prev => prev.filter(p => p.id !== id));
+      flash(status === "approved" ? "Resident approved." : "Signup rejected.");
+    } catch (err) {
+      flash(err.message || "Action failed.", "err");
+    }
   }
 
   // ── Validate form
@@ -698,7 +567,7 @@ export default function MHTEVDirectory() {
     if (err) { setRegError(err); return; }
     setRegSaving(true); setRegError("");
     try {
-      const newRec = await sbInsert({ ...regForm, vehicleNumber: regForm.vehicleNumber.toUpperCase() });
+      const newRec = await insertRecord({ ...regForm, vehicleNumber: regForm.vehicleNumber.toUpperCase() }, session?.user?.id);
       setRecords(prev => [...prev, newRec]);
       setRegSuccess(true); setRegForm(EMPTY_FORM); setRegVnErr("");
     } catch (error) {
@@ -725,7 +594,7 @@ export default function MHTEVDirectory() {
     if (err) { setEditError(err); return; }
     setEditSaving(true); setEditError("");
     try {
-      await sbUpdate(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
+      await updateRecord(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
       setRecords(prev => prev.map(r =>
         r.id === editRec.id ? { ...editForm, id: r.id, vehicleNumber: editForm.vehicleNumber.toUpperCase() } : r
       ));
@@ -742,7 +611,7 @@ export default function MHTEVDirectory() {
   async function handleDelete(id) {
     if (!window.confirm("Permanently delete this record?")) return;
     try {
-      await sbDelete(id);
+      await deleteRecord(id);
       setRecords(prev => prev.filter(r => r.id !== id));
       flash("Record deleted.");
     } catch (error) {
@@ -823,7 +692,7 @@ export default function MHTEVDirectory() {
           return;
         }
 
-        await sbBulkInsert(newRecs);
+        await bulkInsert(newRecs);
         await loadRecords();
 
         const parts = [`✓ Imported ${newRecs.length} record${newRecs.length !== 1 ? "s" : ""}`];
@@ -837,16 +706,88 @@ export default function MHTEVDirectory() {
     reader.readAsText(file);
   }
 
-  // ── Loading state
-  if (loading) {
+  const Shell = ({ children }) => (
+    <div style={{ minHeight:"100vh", background:"#080d1a", fontFamily:"'DM Mono','Courier New',monospace", color:"#e8eaf0", display:"flex", flexDirection:"column" }}>
+      <style>{CSS}</style>
+      {children}
+    </div>
+  );
+
+  // ── Loading / auth-check state
+  if (!authChecked || loading) {
     return (
-      <div style={{ minHeight:"100vh", background:"#080d1a", fontFamily:"'DM Mono','Courier New',monospace", color:"#e8eaf0", display:"flex", flexDirection:"column" }}>
-        <style>{CSS}</style>
+      <Shell>
         <div className="loading-wrap" style={{ flex:1 }}>
           <div className="spinner" />
-          <div className="loading-txt">Connecting to database…</div>
+          <div className="loading-txt">Loading…</div>
         </div>
-      </div>
+      </Shell>
+    );
+  }
+
+  // ── Not signed in → login / signup
+  if (!session) {
+    return (
+      <Shell>
+        <div className="login-card" style={{ maxWidth:400 }}>
+          <div className="login-icon">⚡</div>
+          <h2>MHT EV Directory</h2>
+          <p>{authMode === "login" ? "Sign in to view the resident directory" : "Create a resident account"}</p>
+          {signupDone ? (
+            <div style={{ background:"rgba(74,222,128,.06)", border:"1px solid rgba(74,222,128,.15)", borderRadius:8, padding:"14px 16px", fontSize:12.5, color:"rgba(74,222,128,.85)", lineHeight:1.6, textAlign:"left" }}>
+              Account created. If email confirmation is enabled, confirm via the link we sent.
+              Your account then needs <strong>admin approval</strong> before you can see the directory.
+              <div style={{ marginTop:12 }}>
+                <button className="forgot-link" onClick={() => { setSignupDone(false); setAuthMode("login"); }}>← Back to sign in</button>
+              </div>
+            </div>
+          ) : (
+            <div className="sf-form">
+              {authMode === "signup" && (
+                <>
+                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Full name"
+                    value={authName} onChange={e => { setAuthName(e.target.value); setAuthErr(""); }} />
+                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Flat no. (3–4 digits)"
+                    inputMode="numeric" maxLength={4} value={authFlat}
+                    onChange={e => { setAuthFlat(e.target.value.replace(/\D/g, "").slice(0,4)); setAuthErr(""); }} />
+                </>
+              )}
+              <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Email" type="email"
+                value={authEmail} onChange={e => { setAuthEmail(e.target.value); setAuthErr(""); }} />
+              <div className="pw-wrap" style={{ marginBottom:0 }}>
+                <input type={showPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
+                  placeholder="Password (min. 6 chars)" value={authPw}
+                  onChange={e => { setAuthPw(e.target.value); setAuthErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && handleAuth()} />
+                <button className="eye-btn" onClick={() => setShowPw(p => !p)}>
+                  {showPw ? <IcoEyeOff /> : <IcoEye />}
+                </button>
+              </div>
+              {authErr && <div className="step-err">{authErr}</div>}
+              <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={handleAuth} disabled={authBusy}>
+                {authBusy ? "Please wait…" : (authMode === "login" ? "Sign In" : "Create Account")}
+              </button>
+              <button className="forgot-link" onClick={() => { setAuthMode(m => m === "login" ? "signup" : "login"); setAuthErr(""); }}>
+                {authMode === "login" ? "New resident? Create an account" : "Have an account? Sign in"}
+              </button>
+            </div>
+          )}
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Signed in but not approved yet
+  if (!isApproved) {
+    return (
+      <Shell>
+        <div className="login-card" style={{ maxWidth:400 }}>
+          <div className="login-icon">⏳</div>
+          <h2>Awaiting Approval</h2>
+          <p>Your account is pending approval by the society admin. You'll get access to the directory once approved.</p>
+          <button className="btn-ghost" style={{ margin:"8px auto 0" }} onClick={handleSignOut}>Sign out</button>
+        </div>
+      </Shell>
     );
   }
 
@@ -870,9 +811,13 @@ export default function MHTEVDirectory() {
               <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoList /> All Vehicles</span>
             </button>
             <button className={"tab-btn" + (tab==="register" ? " active" : "")} onClick={() => setTab("register")}>Register</button>
-            <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")} onClick={() => setTab("admin")}>
-              <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoLock /> Admin</span>
-            </button>
+            {isAdmin && (
+              <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")}
+                onClick={() => { setTab("admin"); loadPending(); }}>
+                <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoLock /> Admin</span>
+              </button>
+            )}
+            <button className="tab-btn" onClick={handleSignOut} title="Sign out">Sign out</button>
           </div>
         </div>
       </header>
@@ -884,21 +829,6 @@ export default function MHTEVDirectory() {
           <div style={{ marginBottom:24 }}>
             <div className="msg bad">⚠ {dbError}</div>
             <div style={{ marginTop:8, display:"flex", gap:8, alignItems:"center" }}>
-              <button className="btn-ghost" style={{ fontSize:11 }} onClick={async () => {
-                setDbError("Testing connection…");
-                try {
-                  const r = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&limit=1`, {
-                    headers: {
-                      "apikey": SUPABASE_KEY,
-                      "Authorization": `Bearer ${SUPABASE_KEY}`,
-                    }
-                  });
-                  const txt = await r.text();
-                  setDbError(`HTTP ${r.status} — ${txt.slice(0, 300)}`);
-                } catch(e) {
-                  setDbError("Network error — " + e.message);
-                }
-              }}>🔍 Run Diagnostic</button>
               <button className="btn-ghost" style={{ fontSize:11 }} onClick={loadRecords}><IcoRefresh /> Retry</button>
             </div>
           </div>
@@ -908,7 +838,7 @@ export default function MHTEVDirectory() {
         {!dbError && (
           <div className="db-banner">
             <div className="db-dot" />
-            Live database · {records.length} record{records.length !== 1 ? "s" : ""} · All changes sync instantly across all devices
+            Resident directory · {records.length} record{records.length !== 1 ? "s" : ""} · Visible only to approved residents
           </div>
         )}
 
@@ -960,7 +890,7 @@ export default function MHTEVDirectory() {
               <p className="lookup-p">Browse all registered vehicles. Check before registering to avoid duplicates.</p>
             </div>
             <div style={{ marginTop:28 }}>
-              <VehicleTable records={records} showActions={false} onEdit={null} onDelete={null} />
+              <VehicleTable records={records} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
             </div>
           </div>
         )}
@@ -972,7 +902,7 @@ export default function MHTEVDirectory() {
               <div className="success-panel">
                 <div className="success-icon"><IcoCheck /></div>
                 <h3>Vehicle Registered!</h3>
-                <p>Your EV has been added to the MHT directory and is visible to everyone instantly.</p>
+                <p>Your EV has been added to the MHT directory and is visible to approved residents.</p>
                 <button className="btn-green" style={{ margin:"0 auto" }}
                   onClick={() => { setRegSuccess(false); setRegForm(EMPTY_FORM); setRegError(""); setRegVnErr(""); }}>
                   <IcoPlus /> Register Another
@@ -1007,111 +937,42 @@ export default function MHTEVDirectory() {
           </div>
         )}
 
-        {/* ══════ ADMIN — login gate ══════ */}
-        {tab === "admin" && !isAdmin && loginView === "login" && (
-          <div className="login-card">
-            <div className="login-icon">🔒</div>
-            <h2>Admin Access</h2>
-            <p>Enter your password to manage the directory</p>
-            <div className="pw-wrap">
-              <input type={showPw ? "text" : "password"} className={"pw-inp" + (pwError ? " err" : "")}
-                placeholder="Password" value={adminPw}
-                onChange={e => { setAdminPw(e.target.value); setPwError(""); }}
-                onKeyDown={e => e.key === "Enter" && handleLogin()} />
-              <button className="eye-btn" onClick={() => setShowPw(p => !p)}>
-                {showPw ? <IcoEyeOff /> : <IcoEye />}
-              </button>
-            </div>
-            {pwError && <div className="pw-err">{pwError}</div>}
-            <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={handleLogin}>Unlock</button>
-            <div><button className="forgot-link" onClick={startForgot}>Forgot password?</button></div>
-            <div className="hint">Default: admin123</div>
-          </div>
-        )}
-
-        {/* ══════ ADMIN — forgot password ══════ */}
-        {tab === "admin" && !isAdmin && loginView === "forgot" && (
-          <div className="login-card" style={{ maxWidth:400 }}>
-            <div className="login-icon">🔑</div>
-            <div className="forgot-title">Reset Password</div>
-            <div className="step-indicator">
-              {[1,2,3].map(s => (
-                <div key={s} className={"step-dot" + (fStep === s ? " active" : fStep > s ? " done" : "")} />
-              ))}
-            </div>
-            {fStep === 1 && (
-              <div>
-                <p className="forgot-desc">We'll verify your identity using the security question set by the admin.</p>
-                {!getResetQ()
-                  ? <div className="pw-err">No security question configured. Contact the society secretary.</div>
-                  : <div style={{ background:"rgba(74,222,128,.06)", border:"1px solid rgba(74,222,128,.15)", borderRadius:8, padding:"12px 14px", fontSize:12, color:"rgba(74,222,128,.8)", marginBottom:14, textAlign:"left", lineHeight:1.6 }}>
-                      Security question is set. Click Continue to proceed.
-                    </div>
-                }
-                {fErr && <div className="pw-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotNext1}>Continue</button>
-              </div>
-            )}
-            {fStep === 2 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">Security Question</div>
-                  <div style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", borderRadius:8, padding:"10px 13px", fontSize:13, color:"rgba(255,255,255,.7)", lineHeight:1.5 }}>
-                    {getResetQ()}
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Your Answer</div>
-                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Type your answer"
-                    value={fAnswer} onChange={e => { setFAnswer(e.target.value); setFErr(""); }}
-                    onKeyDown={e => e.key === "Enter" && forgotNext2()} />
-                </div>
-                {fErr && <div className="step-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotNext2}>Verify Answer</button>
-              </div>
-            )}
-            {fStep === 3 && (
-              <div className="sf-form">
-                <p className="forgot-desc">Identity verified. Set your new password below.</p>
-                <div>
-                  <div className="sf-label">New Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={fShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Min. 6 characters" value={fNewPw}
-                      onChange={e => { setFNewPw(e.target.value); setFErr(""); }} />
-                    <button className="eye-btn" onClick={() => setFShowPw(p => !p)}>
-                      {fShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Confirm Password</div>
-                  <input type={fShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                    placeholder="Repeat password" value={fConfirm}
-                    onChange={e => { setFConfirm(e.target.value); setFErr(""); }}
-                    onKeyDown={e => e.key === "Enter" && forgotFinish()} />
-                </div>
-                {fErr && <div className="step-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotFinish}>
-                  <IcoCheck /> Set New Password
-                </button>
-              </div>
-            )}
-            <div style={{ marginTop:16 }}>
-              <button className="forgot-link" onClick={() => { setLoginView("login"); setFErr(""); }}>← Back to login</button>
-            </div>
-          </div>
-        )}
-
-        {/* ══════ ADMIN — panel (full access: add + edit + DELETE) ══════ */}
+        {/* ══════ ADMIN — panel (full access: approvals + add + edit + DELETE) ══════ */}
         {tab === "admin" && isAdmin && (
           <div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12, marginBottom:20 }}>
               <div className="admin-badge"><IcoLock /> Admin Mode — Full Access</div>
               <div style={{ display:"flex", gap:8 }}>
-                <button className="btn-ghost" onClick={loadRecords}><IcoRefresh /> Refresh</button>
-                <button className="btn-yellow" onClick={openReset}><IcoKey /> Reset Password</button>
+                <button className="btn-ghost" onClick={() => { loadRecords(); loadPending(); }}><IcoRefresh /> Refresh</button>
               </div>
+            </div>
+
+            {/* Pending approvals */}
+            <div style={{ marginBottom:24 }}>
+              <div className="sec-label" style={{ marginBottom:10 }}>Pending Approvals ({pendingList.length})</div>
+              {pendingList.length === 0
+                ? <div className="csv-hint">No residents awaiting approval.</div>
+                : <div className="tbl-wrap">
+                    <table>
+                      <thead><tr><th>Name</th><th>Email</th><th>Flat</th><th></th></tr></thead>
+                      <tbody>
+                        {pendingList.map(p => (
+                          <tr key={p.id}>
+                            <td>{p.full_name || "—"}</td>
+                            <td style={{ color:"rgba(255,255,255,.55)", fontSize:12 }}>{p.email || "—"}</td>
+                            <td>{p.flat || "—"}</td>
+                            <td>
+                              <div className="acts">
+                                <button className="btn-green" style={{ padding:"6px 12px" }} onClick={() => decide(p.id, "approved")}><IcoCheck /> Approve</button>
+                                <button className="ico-btn del" onClick={() => decide(p.id, "rejected")} title="Reject"><IcoClose /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+              }
             </div>
 
             <div className="stat-row">
@@ -1121,7 +982,6 @@ export default function MHTEVDirectory() {
             </div>
 
             <div className="toolbar">
-              <input className="adm-search" placeholder="Filter records…" />
               <button className="btn-ghost" onClick={() => fileRef.current.click()}><IcoUpload /> Upload CSV</button>
               <button className="btn-green" onClick={() => setTab("register")}><IcoPlus /> Add Entry</button>
               <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={handleCSV} />
@@ -1130,7 +990,7 @@ export default function MHTEVDirectory() {
             <div className="csv-hint">CSV columns (all optional — at least one value per row): <span>vehicleNumber, ownerName, tower, flat, phone, email, manufacturer, vehicleModel</span> · Duplicate vehicle numbers are skipped automatically.</div>
             {csvMsg && <div className={"msg " + (csvMsg.startsWith("✓") ? "ok" : "bad")}>{csvMsg}</div>}
 
-            <VehicleTable records={records} showActions={true} onEdit={openEdit} onDelete={handleDelete} />
+            <VehicleTable records={records} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
           </div>
         )}
       </div>
@@ -1160,86 +1020,6 @@ export default function MHTEVDirectory() {
                 {editSaving ? "Saving…" : <><IcoCheck /> Save Changes</>}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════ RESET PASSWORD MODAL ══════ */}
-      {showReset && (
-        <div className="overlay" onClick={e => e.target === e.currentTarget && setShowReset(false)}>
-          <div className="modal modal-sm">
-            <div className="modal-hdr">
-              <div>
-                <div className="modal-title">Reset Password</div>
-                <div className="modal-sub">{rStep === 1 ? "Verify current password" : "Set new password & security question"}</div>
-              </div>
-              <button className="x-btn" onClick={() => setShowReset(false)}><IcoClose /></button>
-            </div>
-            <div className="step-indicator" style={{ justifyContent:"flex-start", marginBottom:22 }}>
-              {[1,2].map(s => (
-                <div key={s} className={"step-dot" + (rStep === s ? " active" : rStep > s ? " done" : "")} />
-              ))}
-            </div>
-            {rStep === 1 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">Current Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Enter current password" value={rCurrent}
-                      onChange={e => { setRCurrent(e.target.value); setRErr(""); }}
-                      onKeyDown={e => e.key === "Enter" && resetNext1()} />
-                    <button className="eye-btn" onClick={() => setRShowPw(p => !p)}>
-                      {rShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                {rErr && <div className="step-err">{rErr}</div>}
-                <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-                  <button className="btn-cancel" onClick={() => setShowReset(false)}>Cancel</button>
-                  <button className="btn-green" onClick={resetNext1}>Continue</button>
-                </div>
-              </div>
-            )}
-            {rStep === 2 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">New Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Min. 6 characters" value={rNew}
-                      onChange={e => { setRNew(e.target.value); setRErr(""); }} />
-                    <button className="eye-btn" onClick={() => setRShowPw(p => !p)}>
-                      {rShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Confirm New Password</div>
-                  <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                    placeholder="Repeat new password" value={rConfirm}
-                    onChange={e => { setRConfirm(e.target.value); setRErr(""); }} />
-                </div>
-                <hr style={{ border:"none", borderTop:"1px solid rgba(255,255,255,.07)" }} />
-                <div>
-                  <div className="sf-label">Security Question <span className="req">*</span></div>
-                  <select className="fs" value={rQ} onChange={e => { setRQ(e.target.value); setRErr(""); }}>
-                    <option value="">— Choose a question —</option>
-                    {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <div className="sf-label">Your Answer <span className="req">*</span></div>
-                  <input className="fi" placeholder="Answer (not case-sensitive)" value={rA}
-                    onChange={e => { setRA(e.target.value); setRErr(""); }} />
-                </div>
-                {rErr && <div className="step-err">{rErr}</div>}
-                <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-                  <button className="btn-cancel" onClick={() => setRStep(1)}>Back</button>
-                  <button className="btn-green" onClick={resetSave}><IcoCheck /> Save Changes</button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
