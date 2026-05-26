@@ -82,6 +82,23 @@ You can now log in and approve other residents from the Admin → Approvals queu
 
 ---
 
+## Step 6 — Keep the free Supabase project awake (optional but recommended)
+
+Supabase free-tier projects pause after ~7 days of inactivity. A daily
+keep-alive workflow (`.github/workflows/keepalive.yml`) pings the database so it
+never sleeps. To enable it, add two **repo secrets** (GitHub → Settings →
+Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `SUPABASE_URL` | `https://YOUR-PROJECT.supabase.co` |
+| `SUPABASE_ANON_KEY` | the rotated anon key |
+
+It runs daily and can also be triggered manually from the Actions tab. This
+keeps the app fully free (Vercel Hobby + Supabase free tier).
+
+---
+
 ## What's in this PR vs what's next
 
 **Included & build-verified (works today, before RLS):**
