@@ -20,7 +20,6 @@ function toRecord(r) {
     id: r.id,
     userId: r.user_id || null,
     createdAt: r.created_at || null,
-    vehicleType: r.vehicle_type || "car",
     vehicleNumber: r.vehicle_number,
     ownerName: r.owner_name,
     tower: r.tower,
@@ -36,7 +35,6 @@ function toRecord(r) {
 // camelCase record -> snake_case row (without id/user_id)
 function toRow(rec) {
   return {
-    vehicle_type: rec.vehicleType || "car",
     vehicle_number: rec.vehicleNumber,
     owner_name: rec.ownerName,
     tower: rec.tower,

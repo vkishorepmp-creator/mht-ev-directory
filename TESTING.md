@@ -4,7 +4,7 @@ Goal: prove the **resident-only** gate and RLS actually protect data, and that
 every feature works end-to-end. Do this on a throwaway Supabase project first,
 not production.
 
-Prereqs (from `OWNER_SETUP.md`): migrations `0001`–`0004` applied, Email auth
+Prereqs (from `OWNER_SETUP.md`): migrations `0001`–`0003` applied, Email auth
 enabled, `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set, app deployed (or
 `npm run dev`).
 
@@ -51,26 +51,24 @@ approved login.
   - [ ] Phone `12345` → "exactly 10 digits".
   - [ ] Flat `12` or `12345` → "3 or 4 digits".
   - [ ] Battery empty → "required".
-- [ ] Register a valid **car** (e.g. `MH12AB1234`, Tata / Nexon EV → battery options appear).
-- [ ] Toggle to **Bike**, register a valid one (e.g. Ather / 450X). Battery list switches.
+- [ ] Register a valid EV (e.g. `MH12AB1234`, Tata / Nexon EV → battery options appear).
 - [ ] Register a **custom** model not in the list (type a new manufacturer/model + battery) → saves.
 - [ ] Duplicate vehicle number → "already registered".
 
 ## E. Self-service + ownership (RLS write rules)
-- [ ] As #2, open **My Vehicles** → see only your own cars/bikes, each with an edit button.
+- [ ] As #2, open **My Vehicles** → see only your own vehicles, each with an edit button.
 - [ ] Edit one of your records → saves.
 - [ ] In **All Vehicles**, find a record you do NOT own → no edit/delete button on it.
 - [ ] Confirm a resident has **no Delete** button anywhere (admin-only).
 
 ## F. Admin powers
 - [ ] As admin, **All Vehicles** → edit any record, delete any record (confirm prompt).
-- [ ] **Upload CSV** (a few rows incl. a `batteryCapacity` and `vehicleType` column) → imported, duplicates skipped.
+- [ ] **Upload CSV** (a few rows incl. a `batteryCapacity` column) → imported, duplicates skipped.
 - [ ] Admin sees Delete + Resolve actions that residents don't.
 
 ## G. Feature smoke tests
 - [ ] **Lookup** — partial vehicle number / owner name / flat all return the right record; type icon (car/bike) shows; Call/WhatsApp/Email buttons open correctly.
-- [ ] **Dashboard** — counts for total / cars / bikes / brands / kWh look right; bar lists populate; newest-EV feed shows recent registrations.
-- [ ] **Cars/Bikes filter** on All Vehicles switches the list.
+- [ ] **Dashboard** — counts for total / brands / models / kWh look right; bar lists populate; newest-EV feed shows recent registrations.
 - [ ] **Community Board** — post a tip and a question; reply to one; delete your own post; confirm you can't delete someone else's (non-admin).
 - [ ] **Charger Faults** — report a fault as resident; as admin mark it resolved; badge flips to RESOLVED.
 
