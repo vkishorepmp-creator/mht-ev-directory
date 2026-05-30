@@ -1,0 +1,40 @@
+name: Supabase keep-alive
+
+# Supabase free-tier projects pause after ~7 days of inactivity. This pings the
+# REST endpoint once a day so the project stays awake. Any query counts as
+# activity, even though RLS returns no rows to the anon key.
+#
+# Requires two repo secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       e.g. https://YOUR-PROJECT.supabase.co
+#   SUPABASE_ANON_KEY  the rotated anon key
+#
+# Note: GitHub disables scheduled workflows after 60 days with no repo commits.
+# For an active repo this isn't an issue; otherwise re-enable from the Actions tab.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily at ~06:17 UTC
+  workflow_dispatch: {}     # allow manual run from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "Missing SUPABASE_URL / SUPABASE_ANON_KEY repo secrets."; exit 1
+          fi
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/ev_records?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "Supabase responded: HTTP $code"
+          # 2xx (or 4xx from RLS) all mean the DB was reached and stays awake.
+          case "$code" in
+            2*|4*) echo "Project is awake."; exit 0 ;;
+            *) echo "Unexpected response."; exit 1 ;;
+          esac

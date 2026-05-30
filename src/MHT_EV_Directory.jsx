@@ -1,178 +1,118 @@
 import { useState, useEffect, useRef } from "react";
-
-// ─── Supabase Config ──────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://krcaijliviwxempwqxrz.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtyY2Fpamxpdml3eGVtcHdxeHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MzI2MTIsImV4cCI6MjA5NTIwODYxMn0.tSqjzLCE4PtQWFvjFSCdEk9R7LQOAnnjz5fcBg1aQR4";
-const TABLE = "ev_records";
-
-const headers = {
-  "Content-Type": "application/json",
-  "apikey": SUPABASE_KEY,
-  "Authorization": `Bearer ${SUPABASE_KEY}`,
-  "Prefer": "return=representation",
-};
-
-// ─── Supabase API helpers ─────────────────────────────────────────────────────
-async function sbFetch() {
-  let res;
-  try {
-    res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=created_at.asc`, { headers });
-  } catch (netErr) {
-    throw new Error("Network error — " + netErr.message);
-  }
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-  const data = await res.json();
-  // Normalize snake_case → camelCase
-  return data.map(r => ({
-    id: r.id,
-    vehicleNumber: r.vehicle_number,
-    ownerName: r.owner_name,
-    tower: r.tower,
-    flat: r.flat,
-    phone: r.phone,
-    email: r.email || "",
-    manufacturer: r.manufacturer || "",
-    vehicleModel: r.vehicle_model || "",
-  }));
-}
-
-async function sbInsert(rec) {
-  const body = {
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-    method: "POST", headers, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-  const data = await res.json();
-  const r = data[0];
-  return { id: r.id, vehicleNumber: r.vehicle_number, ownerName: r.owner_name, tower: r.tower, flat: r.flat, phone: r.phone, email: r.email || "", manufacturer: r.manufacturer || "", vehicleModel: r.vehicle_model || "" };
-}
-
-async function sbUpdate(id, rec) {
-  const body = {
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  };
-  console.log("sbUpdate called with:", { id, body });
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-    method: "PATCH", headers, body: JSON.stringify(body),
-  });
-  console.log("sbUpdate response status:", res.status, res.statusText);
-  if (!res.ok) {
-    let msg = res.statusText;
-    let errorDetails = null;
-    try { 
-      const b = await res.json(); 
-      errorDetails = b;
-      msg = b.message || b.hint || b.error || b.details || msg;
-      console.error("sbUpdate error details:", errorDetails);
-      console.error("Full error object:", JSON.stringify(b, null, 2));
-    } catch (e) {
-      console.error("Failed to parse error response:", e);
-    }
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-  console.log("sbUpdate successful");
-}
-
-async function sbDelete(id) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-    method: "DELETE", headers,
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-}
-
-async function sbBulkInsert(recs) {
-  const body = recs.map(rec => ({
-    vehicle_number: rec.vehicleNumber,
-    owner_name: rec.ownerName,
-    tower: rec.tower,
-    flat: rec.flat,
-    phone: rec.phone,
-    email: rec.email || "",
-    manufacturer: rec.manufacturer || "",
-    vehicle_model: rec.vehicleModel || "",
-  }));
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-    method: "POST", headers, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const b = await res.json(); msg = b.message || b.hint || b.error || msg; } catch {}
-    throw new Error(`HTTP ${res.status} — ${msg}`);
-  }
-}
+import { fetchRecords, insertRecord, updateRecord, deleteRecord, bulkInsert } from "./supabase";
+import { signUp, signIn, signOut, getSession, onAuthChange, getMyProfile, listPending, setApproval } from "./auth";
+import { fetchPosts, addPost, deletePost, fetchFaults, addFault, resolveFault } from "./community";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const PW_KEY      = "mht_admin_pw";
-const RESET_Q_KEY = "mht_reset_q";
-const RESET_A_KEY = "mht_reset_a";
-const DEFAULT_PW  = "admin123";
-
-const SECURITY_QUESTIONS = [
-  "What is the name of your society?",
-  "What is the street/road name of your society?",
-  "In which city is your society located?",
-  "What is your society registration number?",
-  "What is the name of the society chairman?",
-];
-
+// Indian-market EV catalogue with battery capacity (kWh). Sourced from public
+// spec data (2024-25). Residents can also type a model not listed here.
 const EV_MAKERS = [
-  { name: "Tata Motors",            models: ["Tiago EV","Tigor EV","Punch EV","Nexon EV","Curvv EV"] },
-  { name: "JSW MG Motor India",     models: ["Comet EV","Windsor EV","ZS EV"] },
-  { name: "Mahindra & Mahindra",    models: ["XUV400","BE 6","XEV 9e"] },
-  { name: "Hyundai Motor India",    models: ["Creta EV","Ioniq 5"] },
-  { name: "BYD India",              models: ["e6/M6","Atto 3","Seal"] },
-  { name: "BMW India",              models: ["iX1","i4","i5","iX","i7"] },
-  { name: "Mercedes-Benz India",    models: ["EQA","EQB","EQE SUV","EQS Sedan"] },
-  { name: "Audi India",             models: ["Q4 e-tron","Q8 e-tron","Q8 e-tron Sportback","e-tron GT","RS e-tron GT"] },
-  { name: "Volvo & Polestar India", models: ["XC40 Recharge (EX40)","C40 Recharge (EC40)","EX90"] },
-  { name: "Kia India",              models: ["EV6","EV9"] },
-  { name: "Maruti Suzuki",          models: ["e Vitara"] },
-  { name: "VinFast India",          models: ["VF e34","VF 5"] },
-  { name: "Porsche India",          models: ["Taycan","Taycan Cross Turismo","Macan Electric"] },
-  { name: "Jaguar Land Rover",      models: ["Jaguar I-Pace"] },
-  { name: "Rolls-Royce Motor Cars", models: ["Spectre"] },
+  { name: "Tata Motors", models: [
+    { name: "Tiago EV", battery: [19.2, 24] },
+    { name: "Tigor EV", battery: [26] },
+    { name: "Punch EV", battery: [25, 35] },
+    { name: "Nexon EV", battery: [30, 40.5, 46.08] },
+    { name: "Curvv EV", battery: [45, 55] },
+  ]},
+  { name: "JSW MG Motor India", models: [
+    { name: "Comet EV", battery: [17.3] },
+    { name: "Windsor EV", battery: [38, 52.9] },
+    { name: "ZS EV", battery: [50.3] },
+  ]},
+  { name: "Mahindra & Mahindra", models: [
+    { name: "XUV400", battery: [34.5, 39.4] },
+    { name: "BE 6", battery: [59, 79] },
+    { name: "XEV 9e", battery: [59, 79] },
+  ]},
+  { name: "Hyundai Motor India", models: [
+    { name: "Creta EV", battery: [42, 51.4] },
+    { name: "Ioniq 5", battery: [72.6] },
+  ]},
+  { name: "BYD India", models: [
+    { name: "e6/M6", battery: [71.8, 55.4] },
+    { name: "Atto 3", battery: [60.48, 49.92] },
+    { name: "Seal", battery: [61.4, 82.5] },
+  ]},
+  { name: "BMW India", models: [
+    { name: "iX1", battery: [64.7] },
+    { name: "i4", battery: [81.5] },
+    { name: "i5", battery: [81.2] },
+    { name: "iX", battery: [76.6, 111.5] },
+    { name: "i7", battery: [101.7] },
+  ]},
+  { name: "Mercedes-Benz India", models: [
+    { name: "EQA", battery: [66.5] },
+    { name: "EQB", battery: [66.5] },
+    { name: "EQE SUV", battery: [90.6] },
+    { name: "EQS Sedan", battery: [107.8] },
+  ]},
+  { name: "Audi India", models: [
+    { name: "Q4 e-tron", battery: [82] },
+    { name: "Q8 e-tron", battery: [114] },
+    { name: "Q8 e-tron Sportback", battery: [114] },
+    { name: "e-tron GT", battery: [93.4] },
+    { name: "RS e-tron GT", battery: [93.4] },
+  ]},
+  { name: "Volvo & Polestar India", models: [
+    { name: "XC40 Recharge (EX40)", battery: [69, 78] },
+    { name: "C40 Recharge (EC40)", battery: [69, 78] },
+    { name: "EX90", battery: [111] },
+  ]},
+  { name: "Kia India", models: [
+    { name: "EV6", battery: [77.4, 84] },
+    { name: "EV9", battery: [99.8] },
+  ]},
+  { name: "Maruti Suzuki", models: [
+    { name: "e Vitara", battery: [49, 61] },
+  ]},
+  { name: "VinFast India", models: [
+    { name: "VF e34", battery: [42] },
+    { name: "VF 5", battery: [37.23] },
+  ]},
+  { name: "Porsche India", models: [
+    { name: "Taycan", battery: [79.2, 93.4, 105] },
+    { name: "Taycan Cross Turismo", battery: [93.4, 105] },
+    { name: "Macan Electric", battery: [100] },
+  ]},
+  { name: "Jaguar Land Rover", models: [
+    { name: "Jaguar I-Pace", battery: [90] },
+  ]},
+  { name: "Rolls-Royce Motor Cars", models: [
+    { name: "Spectre", battery: [102] },
+  ]},
 ];
 
 const TOWERS = [1,2,3,4,5,6,7,8,9];
-const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"" };
+const EMPTY_FORM = { vehicleNumber:"", ownerName:"", tower:"", flat:"", phone:"", email:"", manufacturer:"", vehicleModel:"", batteryCapacity:"" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function getAdminPw() { return localStorage.getItem(PW_KEY) || DEFAULT_PW; }
-function getResetQ()  { return localStorage.getItem(RESET_Q_KEY) || ""; }
-function getResetA()  { return localStorage.getItem(RESET_A_KEY) || ""; }
-
 function validateVN(v) {
   if (!v) return "Vehicle number is required.";
-  if (v.length < 5) return "Vehicle number is too short.";
-  if (!/\d{4}$/.test(v)) return "Last 4 characters must be digits (e.g. MH12AB1234).";
+  if (!/^[A-Z0-9]+$/.test(v)) return "Vehicle number must be letters and digits only.";
+  // Indian registration formats (no spaces — input is already stripped):
+  //  Standard: SS DD L(1-3) NNNN   e.g. MH12AB1234, KA01C0001, DL3CAB1234
+  //  Bharat:   YY BH NNNN L(1-2)   e.g. 22BH1234AA
+  const standard = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}$/;
+  const bharat   = /^\d{2}BH\d{4}[A-Z]{1,2}$/;
+  if (!standard.test(v) && !bharat.test(v))
+    return "Enter a valid Indian number, e.g. MH12AB1234 or 22BH1234AA.";
+  return "";
+}
+function validatePhone(v) {
+  if (!v) return "Phone number is required.";
+  if (!/^\d{10}$/.test(v)) return "Phone must be exactly 10 digits.";
+  return "";
+}
+function validateFlat(v) {
+  if (!v) return "Flat number is required.";
+  if (!/^\d{3,4}$/.test(v)) return "Flat number must be 3 or 4 digits.";
+  return "";
+}
+function validateBattery(v) {
+  if (v === "" || v == null) return "Battery capacity is required.";
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "Battery capacity must be a number in kWh.";
+  if (n < 5 || n > 250) return "Battery capacity looks off — enter kWh (e.g. 40.5).";
   return "";
 }
 
@@ -194,8 +134,18 @@ function IcoList()   { return <svg width="16" height="16" viewBox="0 0 24 24" fi
 function IcoRefresh(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>; }
 
 // ─── Vehicle Form ─────────────────────────────────────────────────────────────
-function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) {
-  const models = form.manufacturer ? (EV_MAKERS.find(m => m.name === form.manufacturer)?.models || []) : [];
+function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr, idPrefix = "f" }) {
+  const maker     = EV_MAKERS.find(m => m.name === form.manufacturer);
+  const modelList = maker?.models || [];
+  const modelEntry = modelList.find(m => m.name === form.vehicleModel);
+  const batteryOpts = modelEntry?.battery || [];
+
+  function handleModelChange(v) {
+    const me = modelList.find(m => m.name === v);
+    // Auto-fill battery only when the model has a single known capacity.
+    const battery = me && me.battery.length === 1 ? String(me.battery[0]) : form.batteryCapacity;
+    onChange({ ...form, vehicleModel: v, batteryCapacity: battery });
+  }
 
   function handleVnInput(e) {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -213,7 +163,7 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
           value={form.vehicleNumber} maxLength={12}
           onChange={handleVnInput} placeholder="e.g. MH12AB1234" />
         <span className={"field-hint" + (vnErr ? " hint-err" : "")}>
-          {vnErr || "Last 4 characters must be digits — e.g. MH12AB1234"}
+          {vnErr || "Letters and digits only — e.g. MH12AB1234"}
         </span>
       </div>
       <div className="fg full">
@@ -224,9 +174,12 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
       </div>
       <div className="fg">
         <label>Phone <span className="req">*</span></label>
-        <input className="fi" value={form.phone}
-          onChange={e => onChange({ ...form, phone: e.target.value })}
+        <input className={"fi" + (form.phone && validatePhone(form.phone) ? " fi-err" : "")}
+          inputMode="numeric" maxLength={10} value={form.phone}
+          onChange={e => onChange({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
           placeholder="10-digit mobile" />
+        {form.phone && validatePhone(form.phone) &&
+          <span className="field-hint hint-err">{validatePhone(form.phone)}</span>}
       </div>
       <div className="fg">
         <label>Email</label>
@@ -246,40 +199,58 @@ function VehicleForm({ form, onChange, onManufacturerChange, vnErr, setVnErr }) 
       </div>
       <div className="fg">
         <label>Flat No. <span className="req">*</span></label>
-        <input className="fi" value={form.flat}
-          onChange={e => onChange({ ...form, flat: e.target.value })}
+        <input className={"fi" + (form.flat && validateFlat(form.flat) ? " fi-err" : "")}
+          inputMode="numeric" maxLength={4} value={form.flat}
+          onChange={e => onChange({ ...form, flat: e.target.value.replace(/\D/g, "").slice(0, 4) })}
           placeholder="e.g. 304" />
+        {form.flat && validateFlat(form.flat) &&
+          <span className="field-hint hint-err">{validateFlat(form.flat)}</span>}
       </div>
       <hr className="form-divider" />
       <div className="sec-label">Vehicle Details</div>
       <div className="fg full">
         <label>Manufacturer <span className="req">*</span></label>
-        <select className="fs" value={form.manufacturer}
-          onChange={e => onManufacturerChange(e.target.value)}>
-          <option value="">— Select Manufacturer —</option>
-          {EV_MAKERS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-        </select>
+        <input className="fi" list={idPrefix + "-mfr"} value={form.manufacturer}
+          onChange={e => onManufacturerChange(e.target.value)}
+          placeholder="Select or type manufacturer" />
+        <datalist id={idPrefix + "-mfr"}>
+          {EV_MAKERS.map(m => <option key={m.name} value={m.name} />)}
+        </datalist>
       </div>
-      <div className="fg full">
+      <div className="fg">
         <label>Vehicle Model <span className="req">*</span></label>
-        <select className="fs" value={form.vehicleModel}
-          onChange={e => onChange({ ...form, vehicleModel: e.target.value })}
-          disabled={!form.manufacturer}>
-          <option value="">{form.manufacturer ? "— Select Model —" : "— Select manufacturer first —"}</option>
-          {models.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+        <input className="fi" list={idPrefix + "-model"} value={form.vehicleModel}
+          onChange={e => handleModelChange(e.target.value)}
+          placeholder="Select or type model" />
+        <datalist id={idPrefix + "-model"}>
+          {modelList.map(m => <option key={m.name} value={m.name} />)}
+        </datalist>
+      </div>
+      <div className="fg">
+        <label>Battery Capacity (kWh) <span className="req">*</span></label>
+        <input className="fi" list={idPrefix + "-bat"} inputMode="decimal"
+          value={form.batteryCapacity}
+          onChange={e => onChange({ ...form, batteryCapacity: e.target.value.replace(/[^\d.]/g, "") })}
+          placeholder="e.g. 40.5" />
+        <datalist id={idPrefix + "-bat"}>
+          {batteryOpts.map(b => <option key={b} value={b} />)}
+        </datalist>
+        <span className="field-hint">Pick a known capacity or type your own.</span>
       </div>
     </div>
   );
 }
 
 // ─── Vehicle Table ────────────────────────────────────────────────────────────
-function VehicleTable({ records, showActions, onEdit, onDelete }) {
+function VehicleTable({ records, isAdmin, currentUserId, onEdit, onDelete }) {
   const [search, setSearch] = useState("");
   const filtered = records.filter(r =>
     !search || [r.vehicleNumber, r.ownerName, r.tower, r.flat, r.phone, r.manufacturer, r.vehicleModel]
       .some(v => v && v.toLowerCase().includes(search.toLowerCase()))
   );
+  // A row is editable by an admin, or by the resident who owns it.
+  const canEdit = r => isAdmin || (currentUserId && r.userId === currentUserId);
+  const showActionsCol = isAdmin || !!currentUserId;
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12, marginBottom:16 }}>
@@ -289,7 +260,7 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
           </div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>
             {records.length} EV{records.length !== 1 ? "s" : ""} registered
-            {!showActions && " · Check before adding yours"}
+            {!isAdmin && " · You can edit your own entry"}
           </div>
         </div>
         <input className="adm-search" style={{ maxWidth:280, flex:"none" }}
@@ -304,7 +275,7 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
                 <tr>
                   <th>Vehicle No.</th><th>Owner</th><th>Tower</th><th>Flat</th>
                   <th>Phone</th><th>Manufacturer</th><th>Model</th>
-                  {showActions && <th></th>}
+                  {showActionsCol && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -317,11 +288,11 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
                     <td>{r.phone}</td>
                     <td style={{ color:"rgba(255,255,255,0.45)", fontSize:12 }}>{r.manufacturer || "—"}</td>
                     <td style={{ color:"rgba(255,255,255,0.55)", fontSize:12 }}>{r.vehicleModel || "—"}</td>
-                    {showActions && (
+                    {showActionsCol && (
                       <td>
                         <div className="acts">
-                          <button className="ico-btn" onClick={() => onEdit(r)} title="Edit"><IcoEdit /></button>
-                          <button className="ico-btn del" onClick={() => onDelete(r.id)} title="Delete"><IcoDelete /></button>
+                          {canEdit(r) && <button className="ico-btn" onClick={() => onEdit(r)} title="Edit"><IcoEdit /></button>}
+                          {isAdmin && <button className="ico-btn del" onClick={() => onDelete(r.id)} title="Delete"><IcoDelete /></button>}
                         </div>
                       </td>
                     )}
@@ -329,6 +300,311 @@ function VehicleTable({ records, showActions, onEdit, onDelete }) {
                 ))}
               </tbody>
             </table>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function countBy(records, keyFn) {
+  const map = new Map();
+  for (const r of records) {
+    const k = keyFn(r);
+    if (k === "" || k == null) continue;
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function BarList({ title, rows, total, unit = "" }) {
+  const max = rows.length ? Math.max(...rows.map(r => r[1])) : 1;
+  return (
+    <div className="dash-card">
+      <div className="dash-card-title">{title}</div>
+      {rows.length === 0
+        ? <div className="csv-hint">No data yet.</div>
+        : rows.map(([label, n]) => (
+            <div key={label} className="bar-row">
+              <div className="bar-label">{label}{unit}</div>
+              <div className="bar-track"><div className="bar-fill" style={{ width: (n / max * 100) + "%" }} /></div>
+              <div className="bar-num">{n}</div>
+            </div>
+          ))
+      }
+    </div>
+  );
+}
+
+function Dashboard({ records }) {
+  const byBrand   = countBy(records, r => r.manufacturer);
+  const byModel   = countBy(records, r => r.vehicleModel);
+  const byBattery = countBy(records, r => r.batteryCapacity !== "" && r.batteryCapacity != null ? String(r.batteryCapacity) : "")
+    .map(([k, n]) => [k + " kWh", n]);
+  const totalKwh  = records.reduce((s, r) => s + (Number(r.batteryCapacity) || 0), 0);
+  const recent    = [...records]
+    .filter(r => r.createdAt)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5);
+
+  return (
+    <div>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Community Insights</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>EV Ownership <span>Dashboard</span></h1>
+        <p className="lookup-p">How the society's EV fleet breaks down by brand, model, and battery size.</p>
+      </div>
+      <div className="stat-row" style={{ marginTop:24 }}>
+        <div className="stat-chip"><span className="stat-num">{records.length}</span><span className="stat-lbl">Total EVs</span></div>
+        <div className="stat-chip"><span className="stat-num">{byBrand.length}</span><span className="stat-lbl">Brands</span></div>
+        <div className="stat-chip"><span className="stat-num">{byModel.length}</span><span className="stat-lbl">Models</span></div>
+        <div className="stat-chip"><span className="stat-num">{Math.round(totalKwh)}</span><span className="stat-lbl">Total kWh</span></div>
+      </div>
+      <div className="dash-grid">
+        <BarList title="By Brand" rows={byBrand} />
+        <BarList title="By Model" rows={byModel} />
+        <BarList title="By Battery Capacity" rows={byBattery} />
+      </div>
+      <div className="dash-card" style={{ marginTop:16 }}>
+        <div className="dash-card-title">🔌 Newest EVs in the community</div>
+        {recent.length === 0
+          ? <div className="csv-hint">No registrations yet.</div>
+          : recent.map(r => (
+              <div key={r.id} className="eti-row" style={{ marginBottom:10 }}>
+                <span className="eti-ico ok">⚡</span>
+                <span>
+                  <strong style={{ color:"#fff" }}>{r.manufacturer} {r.vehicleModel}</strong>
+                  {" — Tower "}{r.tower}{r.flat ? `, Flat ${r.flat}` : ""}
+                  {r.createdAt && <span style={{ color:"rgba(255,255,255,.3)", fontSize:11 }}>{"  ·  "}{new Date(r.createdAt).toLocaleDateString()}</span>}
+                </span>
+              </div>
+            ))
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── Charging Etiquette ───────────────────────────────────────────────────────
+const CHARGING_DOS = [
+  "Move your car once it's charged — free the point for the next resident.",
+  "Unplug gently and coil the cable back on the holster, off the ground.",
+  "Charge to ~80% for daily use; leave the last 20% for someone who needs a top-up.",
+  "Note your start time; if there's a shared log or WhatsApp group, post when you plug in and unplug.",
+  "Report a faulty charger or damaged cable to the society office immediately.",
+  "Use a timer or app reminder so you don't occupy the bay longer than needed.",
+];
+const CHARGING_DONTS = [
+  "Don't leave the car parked at the charger after it's full ('ICE-ing' the EV bay).",
+  "Don't unplug someone else's charging car unless there's an agreed, posted rule.",
+  "Don't run a cable across a walkway or from your flat — it's a trip and fire hazard.",
+  "Don't use a damaged charger or cable; stop and report it.",
+  "Don't hog the fast charger for an overnight slow charge — use it for quick top-ups.",
+  "Don't block the bay with a non-EV or a fully charged car.",
+];
+
+function ChargingEtiquette() {
+  return (
+    <div>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Shared Charger Etiquette</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Charging <span>Do's & Don'ts</span></h1>
+        <p className="lookup-p">A few shared courtesies keep the community chargers fair and available for everyone.</p>
+      </div>
+      <div className="dash-grid" style={{ marginTop:24 }}>
+        <div className="dash-card">
+          <div className="dash-card-title" style={{ color:"#4ade80" }}>✓ Do</div>
+          {CHARGING_DOS.map((t, i) => (
+            <div key={i} className="eti-row"><span className="eti-ico ok">✓</span><span>{t}</span></div>
+          ))}
+        </div>
+        <div className="dash-card">
+          <div className="dash-card-title" style={{ color:"rgba(252,165,165,.9)" }}>✕ Don't</div>
+          {CHARGING_DONTS.map((t, i) => (
+            <div key={i} className="eti-row"><span className="eti-ico bad">✕</span><span>{t}</span></div>
+          ))}
+        </div>
+      </div>
+      <div className="reg-notice" style={{ marginTop:20 }}>
+        <span style={{ flexShrink:0 }}>ℹ</span>
+        <span>Society charging rules vary. If the management committee has posted specific timings or booking rules, those take precedence over this general guidance.</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Community Board (tips / Q&A) ─────────────────────────────────────────────
+function Board({ userId, authorName, isAdmin, flash }) {
+  const [posts, setPosts]       = useState([]);
+  const [loaded, setLoaded]     = useState(false);
+  const [kind, setKind]         = useState("tip");
+  const [title, setTitle]       = useState("");
+  const [body, setBody]         = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [replyTo, setReplyTo]   = useState(null);
+  const [replyBody, setReplyBody] = useState("");
+
+  useEffect(() => { (async () => {
+    try { setPosts(await fetchPosts()); } catch (e) { flash(e.message, "err"); } finally { setLoaded(true); }
+  })(); }, []);
+
+  async function submit() {
+    if (!body.trim()) { flash("Write something first.", "err"); return; }
+    setBusy(true);
+    try {
+      const p = await addPost({ kind, title: title.trim(), body: body.trim(), authorName }, userId);
+      setPosts(prev => [p, ...prev]); setTitle(""); setBody("");
+    } catch (e) { flash(e.message, "err"); } finally { setBusy(false); }
+  }
+  async function submitReply(parentId) {
+    if (!replyBody.trim()) return;
+    try {
+      const p = await addPost({ kind: "reply", body: replyBody.trim(), parentId, authorName }, userId);
+      setPosts(prev => [...prev, p]); setReplyBody(""); setReplyTo(null);
+    } catch (e) { flash(e.message, "err"); }
+  }
+  async function remove(id) {
+    if (!window.confirm("Delete this post?")) return;
+    try { await deletePost(id); setPosts(prev => prev.filter(p => p.id !== id && p.parent_id !== id)); }
+    catch (e) { flash(e.message, "err"); }
+  }
+
+  const threads   = posts.filter(p => !p.parent_id);
+  const repliesOf = id => posts.filter(p => p.parent_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const canManage = p => isAdmin || p.user_id === userId;
+
+  return (
+    <div className="reg-wrap" style={{ maxWidth:720 }}>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Community Board</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Tips & <span>Q&A</span></h1>
+        <p className="lookup-p">Share an EV tip or ask the community a question.</p>
+      </div>
+
+      <div className="dash-card" style={{ marginTop:20 }}>
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          <button className={kind === "tip" ? "btn-green" : "btn-ghost"} onClick={() => setKind("tip")}>Tip</button>
+          <button className={kind === "question" ? "btn-green" : "btn-ghost"} onClick={() => setKind("question")}>Question</button>
+        </div>
+        <input className="fi" style={{ marginBottom:10 }} placeholder={kind === "tip" ? "Tip title (optional)" : "Your question (short title)"}
+          value={title} onChange={e => setTitle(e.target.value)} />
+        <textarea className="fi" rows={3} style={{ marginBottom:10, resize:"vertical" }}
+          placeholder={kind === "tip" ? "Share the details…" : "Add any context…"}
+          value={body} onChange={e => setBody(e.target.value)} />
+        <div className="f-actions">
+          <button className="btn-green" onClick={submit} disabled={busy}>{busy ? "Posting…" : <><IcoPlus /> Post</>}</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop:20 }}>
+        {!loaded ? <div className="csv-hint">Loading…</div>
+          : threads.length === 0 ? <div className="empty">No posts yet — start the conversation.</div>
+          : threads.map(p => (
+            <div key={p.id} className="dash-card" style={{ marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10 }}>
+                <div>
+                  <span className="badge" style={{ marginRight:8 }}>{p.kind === "question" ? "Q" : "TIP"}</span>
+                  <strong style={{ color:"#fff" }}>{p.title || (p.kind === "question" ? "Question" : "Tip")}</strong>
+                </div>
+                {canManage(p) && <button className="ico-btn del" onClick={() => remove(p.id)} title="Delete"><IcoDelete /></button>}
+              </div>
+              <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", marginTop:8, whiteSpace:"pre-wrap", lineHeight:1.6 }}>{p.body}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:8 }}>
+                {p.author_name || "Resident"} · {p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}
+              </div>
+
+              {repliesOf(p.id).map(r => (
+                <div key={r.id} className="board-reply">
+                  <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", whiteSpace:"pre-wrap", lineHeight:1.6 }}>{r.body}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:4, display:"flex", justifyContent:"space-between" }}>
+                    <span>{r.author_name || "Resident"} · {r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}</span>
+                    {canManage(r) && <button className="forgot-link" style={{ marginTop:0 }} onClick={() => remove(r.id)}>delete</button>}
+                  </div>
+                </div>
+              ))}
+
+              {replyTo === p.id ? (
+                <div style={{ marginTop:10, display:"flex", gap:8 }}>
+                  <input className="fi" placeholder="Write a reply…" value={replyBody}
+                    onChange={e => setReplyBody(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && submitReply(p.id)} />
+                  <button className="btn-green" onClick={() => submitReply(p.id)}>Reply</button>
+                </div>
+              ) : (
+                <button className="forgot-link" onClick={() => { setReplyTo(p.id); setReplyBody(""); }}>Reply</button>
+              )}
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── Charger Fault Reporting ──────────────────────────────────────────────────
+function Faults({ userId, reporterName, isAdmin, flash }) {
+  const [faults, setFaults]   = useState([]);
+  const [loaded, setLoaded]   = useState(false);
+  const [location, setLocation] = useState("");
+  const [desc, setDesc]       = useState("");
+  const [busy, setBusy]       = useState(false);
+
+  useEffect(() => { (async () => {
+    try { setFaults(await fetchFaults()); } catch (e) { flash(e.message, "err"); } finally { setLoaded(true); }
+  })(); }, []);
+
+  async function submit() {
+    if (!desc.trim()) { flash("Describe the fault first.", "err"); return; }
+    setBusy(true);
+    try {
+      const f = await addFault({ location: location.trim(), description: desc.trim(), reporterName }, userId);
+      setFaults(prev => [f, ...prev]); setLocation(""); setDesc("");
+      flash("Fault reported. Thanks!");
+    } catch (e) { flash(e.message, "err"); } finally { setBusy(false); }
+  }
+  async function resolve(id) {
+    try { await resolveFault(id); setFaults(prev => prev.map(f => f.id === id ? { ...f, status: "resolved" } : f)); }
+    catch (e) { flash(e.message, "err"); }
+  }
+
+  return (
+    <div className="reg-wrap" style={{ maxWidth:720 }}>
+      <div className="lookup-hero" style={{ paddingBottom:8 }}>
+        <div className="eyebrow">Charger Maintenance</div>
+        <h1 className="lookup-h1" style={{ fontSize:30 }}>Report a <span>Charger Fault</span></h1>
+        <p className="lookup-p">Flag a broken or faulty community charger so the committee can fix it.</p>
+      </div>
+
+      <div className="dash-card" style={{ marginTop:20 }}>
+        <input className="fi" style={{ marginBottom:10 }} placeholder="Which charger / bay? (e.g. Basement B2, Point 3)"
+          value={location} onChange={e => setLocation(e.target.value)} />
+        <textarea className="fi" rows={3} style={{ marginBottom:10, resize:"vertical" }}
+          placeholder="What's wrong? (e.g. cable damaged, point not powering on)"
+          value={desc} onChange={e => setDesc(e.target.value)} />
+        <div className="f-actions">
+          <button className="btn-green" onClick={submit} disabled={busy}>{busy ? "Reporting…" : <><IcoPlus /> Report Fault</>}</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop:20 }}>
+        {!loaded ? <div className="csv-hint">Loading…</div>
+          : faults.length === 0 ? <div className="empty">No faults reported. 🎉</div>
+          : faults.map(f => (
+            <div key={f.id} className="dash-card" style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"flex-start" }}>
+                <div>
+                  <span className={"fault-badge " + f.status}>{f.status === "open" ? "OPEN" : "RESOLVED"}</span>
+                  {f.location && <strong style={{ color:"#fff", marginLeft:8 }}>{f.location}</strong>}
+                </div>
+                {isAdmin && f.status === "open" &&
+                  <button className="btn-green" style={{ padding:"6px 12px" }} onClick={() => resolve(f.id)}><IcoCheck /> Resolve</button>}
+              </div>
+              <div style={{ fontSize:13, color:"rgba(255,255,255,.7)", marginTop:8, whiteSpace:"pre-wrap", lineHeight:1.6 }}>{f.description}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,.3)", marginTop:8 }}>
+                {f.reporter_name || "Resident"} · {f.created_at ? new Date(f.created_at).toLocaleDateString() : ""}
+              </div>
+            </div>
+          ))
         }
       </div>
     </div>
@@ -491,6 +767,27 @@ td { padding:12px 14px; font-size:13px; color:rgba(255,255,255,.7); }
 @keyframes up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 @keyframes fi  { from { opacity:0; } to { opacity:1; } }
 
+.contact-row { display:flex; gap:10px; margin-top:20px; flex-wrap:wrap; }
+.contact-btn { text-decoration:none; padding:9px 18px; border-radius:8px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:rgba(255,255,255,.7); transition:all .2s; }
+.contact-btn:hover { border-color:rgba(74,222,128,.4); color:#4ade80; }
+.contact-btn.wa { border-color:rgba(74,222,128,.3); color:#4ade80; }
+.dash-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-top:8px; }
+.dash-card { background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.07); border-radius:14px; padding:20px 22px; }
+.dash-card-title { font-family:'Outfit',sans-serif; font-weight:800; font-size:15px; color:#fff; margin-bottom:16px; }
+.bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.bar-label { flex:0 0 38%; font-size:12px; color:rgba(255,255,255,.6); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bar-track { flex:1; height:8px; background:rgba(255,255,255,.05); border-radius:5px; overflow:hidden; }
+.bar-fill { height:100%; background:linear-gradient(90deg,#22c55e,#4ade80); border-radius:5px; }
+.bar-num { flex:0 0 28px; text-align:right; font-size:12px; color:#4ade80; font-weight:500; }
+.eti-row { display:flex; align-items:flex-start; gap:10px; font-size:13px; color:rgba(255,255,255,.7); line-height:1.55; margin-bottom:12px; }
+.eti-ico { flex-shrink:0; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; margin-top:1px; }
+.eti-ico.ok { background:rgba(34,197,94,.12); color:#4ade80; }
+.eti-ico.bad { background:rgba(239,68,68,.12); color:rgba(252,165,165,.9); }
+.board-reply { margin:10px 0 0 16px; padding:10px 14px; border-left:2px solid rgba(74,222,128,.25); background:rgba(255,255,255,.02); border-radius:0 8px 8px 0; }
+.fault-badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:5px; font-size:10px; letter-spacing:1px; }
+.fault-badge.open { background:rgba(239,68,68,.12); color:rgba(252,165,165,.9); border:1px solid rgba(239,68,68,.25); }
+.fault-badge.resolved { background:rgba(34,197,94,.1); color:#4ade80; border:1px solid rgba(34,197,94,.25); }
+
 @media (max-width:700px) {
   .page { padding:24px 16px; }
   .hdr { padding:0 14px; }
@@ -511,33 +808,29 @@ export default function MHTEVDirectory() {
   const [loading, setLoading]   = useState(true);
   const [dbError, setDbError]   = useState("");
   const [tab, setTab]           = useState("lookup");
-  const [isAdmin, setIsAdmin]   = useState(false);
   const [toast, setToast]       = useState({ msg:"", type:"ok" });
 
-  // ── Admin login
-  const [loginView, setLoginView] = useState("login");
-  const [adminPw, setAdminPw]     = useState("");
-  const [showPw, setShowPw]       = useState(false);
-  const [pwError, setPwError]     = useState("");
+  // ── Auth / profile (the React flags are presentation only; RLS enforces)
+  const [session, setSession]         = useState(null);
+  const [profile, setProfile]         = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // ── Forgot password
-  const [fStep, setFStep]       = useState(1);
-  const [fAnswer, setFAnswer]   = useState("");
-  const [fNewPw, setFNewPw]     = useState("");
-  const [fConfirm, setFConfirm] = useState("");
-  const [fErr, setFErr]         = useState("");
-  const [fShowPw, setFShowPw]   = useState(false);
+  const isAdmin    = profile?.role === "admin";
+  const isApproved = isAdmin || profile?.status === "approved";
 
-  // ── Reset password modal
-  const [showReset, setShowReset] = useState(false);
-  const [rStep, setRStep]         = useState(1);
-  const [rCurrent, setRCurrent]   = useState("");
-  const [rNew, setRNew]           = useState("");
-  const [rConfirm, setRConfirm]   = useState("");
-  const [rQ, setRQ]               = useState("");
-  const [rA, setRA]               = useState("");
-  const [rErr, setRErr]           = useState("");
-  const [rShowPw, setRShowPw]     = useState(false);
+  // ── Auth form
+  const [authMode, setAuthMode]     = useState("login"); // "login" | "signup"
+  const [authEmail, setAuthEmail]   = useState("");
+  const [authPw, setAuthPw]         = useState("");
+  const [authName, setAuthName]     = useState("");
+  const [authFlat, setAuthFlat]     = useState("");
+  const [authErr, setAuthErr]       = useState("");
+  const [authBusy, setAuthBusy]     = useState(false);
+  const [showPw, setShowPw]         = useState(false);
+  const [signupDone, setSignupDone] = useState(false);
+
+  // ── Admin approvals
+  const [pendingList, setPendingList] = useState([]);
 
   // ── Lookup
   const [query, setQuery]               = useState("");
@@ -551,7 +844,7 @@ export default function MHTEVDirectory() {
   const [regSuccess, setRegSuccess] = useState(false);
   const [regSaving, setRegSaving]   = useState(false);
 
-  // ── Admin edit
+  // ── Edit (admin: any record; resident: own record)
   const [editRec, setEditRec]     = useState(null);
   const [editForm, setEditForm]   = useState(EMPTY_FORM);
   const [editVnErr, setEditVnErr] = useState("");
@@ -563,19 +856,42 @@ export default function MHTEVDirectory() {
   const [csvMsg, setCsvMsg] = useState("");
   const fileRef = useRef();
 
-  // ── Load from Supabase on mount
-  useEffect(() => { loadRecords(); }, []);
+  // ── Auth bootstrap: read session once, then subscribe to changes
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      setSession(await getSession());
+      setAuthChecked(true);
+      unsub = onAuthChange(s => setSession(s));
+    })();
+    return () => unsub();
+  }, []);
+
+  // When the session changes, (re)load profile and — if approved — records
+  useEffect(() => {
+    if (!session) { setProfile(null); setRecords([]); setLoading(false); return; }
+    (async () => {
+      try {
+        const p = await getMyProfile();
+        setProfile(p);
+        if (p && (p.status === "approved" || p.role === "admin")) {
+          await loadRecords();
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        setDbError(err.message || "Could not load your profile.");
+        setLoading(false);
+      }
+    })();
+  }, [session]);
 
   async function loadRecords() {
     setLoading(true); setDbError("");
     try {
-      const data = await sbFetch();
-      console.log("Loaded records:", data.length);
-      console.log("Sample record structure:", data.length > 0 ? data[0] : "No records");
-      console.log("All record IDs:", data.map(r => ({ id: r.id, vehicleNumber: r.vehicleNumber })));
-      setRecords(data);
+      setRecords(await fetchRecords());
     } catch (err) {
-      setDbError("Could not connect to database — " + (err.message || "unknown error") + ". Check your internet connection and Supabase RLS settings.");
+      setDbError("Could not load records — " + (err.message || "unknown error") + ".");
     } finally {
       setLoading(false);
     }
@@ -588,66 +904,58 @@ export default function MHTEVDirectory() {
 
   // ── Lookup
   function handleLookup() {
-    const q = query.trim().toUpperCase();
+    const q = query.trim().toLowerCase();
     if (!q) return;
-    setLookupResult(records.find(r => r.vehicleNumber.toUpperCase() === q) || null);
+    // Forgiving match: exact vehicle number wins; else first substring hit
+    // across vehicle number, owner name, or flat (parity with All Vehicles).
+    const exact = records.find(r => r.vehicleNumber.toLowerCase() === q);
+    const hit = exact || records.find(r =>
+      [r.vehicleNumber, r.ownerName, r.flat].some(v => v && v.toLowerCase().includes(q))
+    );
+    setLookupResult(hit || null);
     setLookupDone(true);
   }
 
-  // ── Admin login
-  function handleLogin() {
-    if (adminPw === getAdminPw()) {
-      setIsAdmin(true); setAdminPw(""); setPwError(""); setLoginView("login");
-    } else {
-      setPwError("Incorrect password. Try again.");
+  // ── Auth actions
+  async function handleAuth() {
+    setAuthErr(""); setAuthBusy(true);
+    try {
+      if (authMode === "signup") {
+        if (!authName.trim()) throw new Error("Please enter your name.");
+        const flatE = validateFlat(authFlat.trim());
+        if (flatE) throw new Error(flatE);
+        if (authPw.length < 6) throw new Error("Password must be at least 6 characters.");
+        await signUp({ email: authEmail.trim(), password: authPw, fullName: authName.trim(), flat: authFlat.trim() });
+        setSignupDone(true);
+      } else {
+        await signIn({ email: authEmail.trim(), password: authPw });
+        // session updates via onAuthChange → profile + records load
+      }
+      setAuthPw("");
+    } catch (err) {
+      setAuthErr(err.message || "Authentication failed.");
+    } finally {
+      setAuthBusy(false);
     }
   }
-
-  // ── Forgot password
-  function startForgot() {
-    setFStep(1); setFAnswer(""); setFNewPw(""); setFConfirm(""); setFErr(""); setFShowPw(false);
-    setLoginView("forgot");
-  }
-  function forgotNext1() {
-    if (!getResetQ()) { setFErr("No security question set. Contact the society secretary."); return; }
-    setFErr(""); setFStep(2);
-  }
-  function forgotNext2() {
-    if (!fAnswer.trim()) { setFErr("Please enter your answer."); return; }
-    if (fAnswer.trim().toLowerCase() !== getResetA().toLowerCase()) { setFErr("Answer is incorrect."); return; }
-    setFErr(""); setFStep(3);
-  }
-  function forgotFinish() {
-    if (!fNewPw) { setFErr("New password is required."); return; }
-    if (fNewPw.length < 6) { setFErr("Password must be at least 6 characters."); return; }
-    if (fNewPw !== fConfirm) { setFErr("Passwords do not match."); return; }
-    localStorage.setItem(PW_KEY, fNewPw);
-    setLoginView("login"); setAdminPw("");
-    flash("Password reset. Please log in with your new password.");
+  async function handleSignOut() {
+    await signOut();
+    setProfile(null); setTab("lookup"); setLookupResult(null); setLookupDone(false);
   }
 
-  // ── Reset password (logged in)
-  function openReset() {
-    setRStep(1); setRCurrent(""); setRNew(""); setRConfirm("");
-    setRQ(getResetQ()); setRA(""); setRErr(""); setRShowPw(false);
-    setShowReset(true);
+  // ── Admin approvals
+  async function loadPending() {
+    try { setPendingList(await listPending()); }
+    catch (err) { flash(err.message || "Could not load pending list.", "err"); }
   }
-  function resetNext1() {
-    if (!rCurrent) { setRErr("Enter your current password."); return; }
-    if (rCurrent !== getAdminPw()) { setRErr("Current password is incorrect."); return; }
-    setRErr(""); setRStep(2);
-  }
-  function resetSave() {
-    if (!rNew) { setRErr("New password is required."); return; }
-    if (rNew.length < 6) { setRErr("Password must be at least 6 characters."); return; }
-    if (rNew !== rConfirm) { setRErr("Passwords do not match."); return; }
-    if (!rQ) { setRErr("Please choose a security question."); return; }
-    if (!rA.trim()) { setRErr("Please provide an answer to the security question."); return; }
-    localStorage.setItem(PW_KEY, rNew);
-    localStorage.setItem(RESET_Q_KEY, rQ);
-    localStorage.setItem(RESET_A_KEY, rA.trim().toLowerCase());
-    setShowReset(false);
-    flash("Password & security question updated.");
+  async function decide(id, status) {
+    try {
+      await setApproval(id, status);
+      setPendingList(prev => prev.filter(p => p.id !== id));
+      flash(status === "approved" ? "Resident approved." : "Signup rejected.");
+    } catch (err) {
+      flash(err.message || "Action failed.", "err");
+    }
   }
 
   // ── Validate form
@@ -656,10 +964,14 @@ export default function MHTEVDirectory() {
     if (vnE) return vnE;
     if (!form.ownerName.trim()) return "Owner name is required.";
     if (!form.tower)            return "Tower is required.";
-    if (!form.flat.trim())      return "Flat number is required.";
-    if (!form.phone.trim())     return "Phone number is required.";
-    if (!form.manufacturer)     return "Manufacturer is required.";
-    if (!form.vehicleModel)     return "Vehicle model is required.";
+    const flatE = validateFlat(form.flat.trim());
+    if (flatE) return flatE;
+    const phoneE = validatePhone(form.phone.trim());
+    if (phoneE) return phoneE;
+    if (!form.manufacturer.trim()) return "Manufacturer is required.";
+    if (!form.vehicleModel.trim()) return "Vehicle model is required.";
+    const batE = validateBattery(form.batteryCapacity);
+    if (batE) return batE;
     const dup = records.find(r =>
       r.vehicleNumber.toUpperCase() === form.vehicleNumber.toUpperCase() && r.id !== excludeId
     );
@@ -673,7 +985,7 @@ export default function MHTEVDirectory() {
     if (err) { setRegError(err); return; }
     setRegSaving(true); setRegError("");
     try {
-      const newRec = await sbInsert({ ...regForm, vehicleNumber: regForm.vehicleNumber.toUpperCase() });
+      const newRec = await insertRecord({ ...regForm, vehicleNumber: regForm.vehicleNumber.toUpperCase() }, session?.user?.id);
       setRecords(prev => [...prev, newRec]);
       setRegSuccess(true); setRegForm(EMPTY_FORM); setRegVnErr("");
     } catch (error) {
@@ -686,11 +998,9 @@ export default function MHTEVDirectory() {
   // ── Admin edit (can edit AND delete)
   function openEdit(r) {
     if (!r || !r.id) {
-      console.error("Cannot edit record: missing ID", r);
       flash("Cannot edit this record - missing ID", "err");
       return;
     }
-    console.log("Opening edit for record:", r.id, r);
     setEditRec(r); setEditForm({ ...r }); setEditVnErr(""); setEditError(""); setShowEdit(true);
   }
   async function handleEditSave() {
@@ -702,15 +1012,12 @@ export default function MHTEVDirectory() {
     if (err) { setEditError(err); return; }
     setEditSaving(true); setEditError("");
     try {
-      console.log("Attempting to update record:", editRec.id, editForm);
-      await sbUpdate(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
-      console.log("Update successful");
+      await updateRecord(editRec.id, { ...editForm, vehicleNumber: editForm.vehicleNumber.toUpperCase() });
       setRecords(prev => prev.map(r =>
         r.id === editRec.id ? { ...editForm, id: r.id, vehicleNumber: editForm.vehicleNumber.toUpperCase() } : r
       ));
       setShowEdit(false); flash("Record updated.");
     } catch (error) {
-      console.error("Update failed with error:", error);
       const errorMessage = error?.message || error?.toString() || "Failed to save. Please try again.";
       setEditError(errorMessage);
     } finally {
@@ -722,7 +1029,7 @@ export default function MHTEVDirectory() {
   async function handleDelete(id) {
     if (!window.confirm("Permanently delete this record?")) return;
     try {
-      await sbDelete(id);
+      await deleteRecord(id);
       setRecords(prev => prev.filter(r => r.id !== id));
       flash("Record deleted.");
     } catch (error) {
@@ -753,6 +1060,7 @@ export default function MHTEVDirectory() {
             email:         ["email","emailid","email_id","mail"],
             manufacturer:  ["manufacturer","make","brand","company","carmaker"],
             vehiclemodel:  ["vehiclemodel","vehicle_model","model","carmodel","evmodel"],
+            batterycapacity: ["batterycapacity","battery","battery_capacity","kwh","batterykwh","capacity"],
           };
           const list = aliases[name] || [name];
           const idx = hdrs.findIndex(h => list.includes(h));
@@ -780,6 +1088,7 @@ export default function MHTEVDirectory() {
             email:         get("email"),
             manufacturer:  get("manufacturer"),
             vehicleModel:  get("vehiclemodel"),
+            batteryCapacity: get("batterycapacity"),
           };
 
           // Skip if every field is empty (completely blank row)
@@ -803,7 +1112,7 @@ export default function MHTEVDirectory() {
           return;
         }
 
-        await sbBulkInsert(newRecs);
+        await bulkInsert(newRecs);
         await loadRecords();
 
         const parts = [`✓ Imported ${newRecs.length} record${newRecs.length !== 1 ? "s" : ""}`];
@@ -817,16 +1126,88 @@ export default function MHTEVDirectory() {
     reader.readAsText(file);
   }
 
-  // ── Loading state
-  if (loading) {
+  const Shell = ({ children }) => (
+    <div style={{ minHeight:"100vh", background:"#080d1a", fontFamily:"'DM Mono','Courier New',monospace", color:"#e8eaf0", display:"flex", flexDirection:"column" }}>
+      <style>{CSS}</style>
+      {children}
+    </div>
+  );
+
+  // ── Loading / auth-check state
+  if (!authChecked || loading) {
     return (
-      <div style={{ minHeight:"100vh", background:"#080d1a", fontFamily:"'DM Mono','Courier New',monospace", color:"#e8eaf0", display:"flex", flexDirection:"column" }}>
-        <style>{CSS}</style>
+      <Shell>
         <div className="loading-wrap" style={{ flex:1 }}>
           <div className="spinner" />
-          <div className="loading-txt">Connecting to database…</div>
+          <div className="loading-txt">Loading…</div>
         </div>
-      </div>
+      </Shell>
+    );
+  }
+
+  // ── Not signed in → login / signup
+  if (!session) {
+    return (
+      <Shell>
+        <div className="login-card" style={{ maxWidth:400 }}>
+          <div className="login-icon">⚡</div>
+          <h2>MHT EV Directory</h2>
+          <p>{authMode === "login" ? "Sign in to view the resident directory" : "Create a resident account"}</p>
+          {signupDone ? (
+            <div style={{ background:"rgba(74,222,128,.06)", border:"1px solid rgba(74,222,128,.15)", borderRadius:8, padding:"14px 16px", fontSize:12.5, color:"rgba(74,222,128,.85)", lineHeight:1.6, textAlign:"left" }}>
+              Account created. If email confirmation is enabled, confirm via the link we sent.
+              Your account then needs <strong>admin approval</strong> before you can see the directory.
+              <div style={{ marginTop:12 }}>
+                <button className="forgot-link" onClick={() => { setSignupDone(false); setAuthMode("login"); }}>← Back to sign in</button>
+              </div>
+            </div>
+          ) : (
+            <div className="sf-form">
+              {authMode === "signup" && (
+                <>
+                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Full name"
+                    value={authName} onChange={e => { setAuthName(e.target.value); setAuthErr(""); }} />
+                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Flat no. (3–4 digits)"
+                    inputMode="numeric" maxLength={4} value={authFlat}
+                    onChange={e => { setAuthFlat(e.target.value.replace(/\D/g, "").slice(0,4)); setAuthErr(""); }} />
+                </>
+              )}
+              <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Email" type="email"
+                value={authEmail} onChange={e => { setAuthEmail(e.target.value); setAuthErr(""); }} />
+              <div className="pw-wrap" style={{ marginBottom:0 }}>
+                <input type={showPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
+                  placeholder="Password (min. 6 chars)" value={authPw}
+                  onChange={e => { setAuthPw(e.target.value); setAuthErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && handleAuth()} />
+                <button className="eye-btn" onClick={() => setShowPw(p => !p)}>
+                  {showPw ? <IcoEyeOff /> : <IcoEye />}
+                </button>
+              </div>
+              {authErr && <div className="step-err">{authErr}</div>}
+              <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={handleAuth} disabled={authBusy}>
+                {authBusy ? "Please wait…" : (authMode === "login" ? "Sign In" : "Create Account")}
+              </button>
+              <button className="forgot-link" onClick={() => { setAuthMode(m => m === "login" ? "signup" : "login"); setAuthErr(""); }}>
+                {authMode === "login" ? "New resident? Create an account" : "Have an account? Sign in"}
+              </button>
+            </div>
+          )}
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Signed in but not approved yet
+  if (!isApproved) {
+    return (
+      <Shell>
+        <div className="login-card" style={{ maxWidth:400 }}>
+          <div className="login-icon">⏳</div>
+          <h2>Awaiting Approval</h2>
+          <p>Your account is pending approval by the society admin. You'll get access to the directory once approved.</p>
+          <button className="btn-ghost" style={{ margin:"8px auto 0" }} onClick={handleSignOut}>Sign out</button>
+        </div>
+      </Shell>
     );
   }
 
@@ -849,10 +1230,19 @@ export default function MHTEVDirectory() {
             <button className={"tab-btn" + (tab==="vehicles" ? " active" : "")} onClick={() => setTab("vehicles")}>
               <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoList /> All Vehicles</span>
             </button>
+            <button className={"tab-btn" + (tab==="mine" ? " active" : "")} onClick={() => setTab("mine")}>My Vehicles</button>
+            <button className={"tab-btn" + (tab==="dashboard" ? " active" : "")} onClick={() => setTab("dashboard")}>Dashboard</button>
+            <button className={"tab-btn" + (tab==="charging" ? " active" : "")} onClick={() => setTab("charging")}>Charging</button>
+            <button className={"tab-btn" + (tab==="board" ? " active" : "")} onClick={() => setTab("board")}>Board</button>
+            <button className={"tab-btn" + (tab==="faults" ? " active" : "")} onClick={() => setTab("faults")}>Faults</button>
             <button className={"tab-btn" + (tab==="register" ? " active" : "")} onClick={() => setTab("register")}>Register</button>
-            <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")} onClick={() => setTab("admin")}>
-              <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoLock /> Admin</span>
-            </button>
+            {isAdmin && (
+              <button className={"tab-btn admin-tab" + (tab==="admin" ? " active" : "")}
+                onClick={() => { setTab("admin"); loadPending(); }}>
+                <span style={{ display:"flex", alignItems:"center", gap:5 }}><IcoLock /> Admin</span>
+              </button>
+            )}
+            <button className="tab-btn" onClick={handleSignOut} title="Sign out">Sign out</button>
           </div>
         </div>
       </header>
@@ -864,21 +1254,6 @@ export default function MHTEVDirectory() {
           <div style={{ marginBottom:24 }}>
             <div className="msg bad">⚠ {dbError}</div>
             <div style={{ marginTop:8, display:"flex", gap:8, alignItems:"center" }}>
-              <button className="btn-ghost" style={{ fontSize:11 }} onClick={async () => {
-                setDbError("Testing connection…");
-                try {
-                  const r = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&limit=1`, {
-                    headers: {
-                      "apikey": SUPABASE_KEY,
-                      "Authorization": `Bearer ${SUPABASE_KEY}`,
-                    }
-                  });
-                  const txt = await r.text();
-                  setDbError(`HTTP ${r.status} — ${txt.slice(0, 300)}`);
-                } catch(e) {
-                  setDbError("Network error — " + e.message);
-                }
-              }}>🔍 Run Diagnostic</button>
               <button className="btn-ghost" style={{ fontSize:11 }} onClick={loadRecords}><IcoRefresh /> Retry</button>
             </div>
           </div>
@@ -888,7 +1263,7 @@ export default function MHTEVDirectory() {
         {!dbError && (
           <div className="db-banner">
             <div className="db-dot" />
-            Live database · {records.length} record{records.length !== 1 ? "s" : ""} · All changes sync instantly across all devices
+            Resident directory · {records.length} record{records.length !== 1 ? "s" : ""} · Visible only to approved residents
           </div>
         )}
 
@@ -901,7 +1276,7 @@ export default function MHTEVDirectory() {
               <p className="lookup-p">Enter a vehicle registration number to get owner & location details instantly</p>
             </div>
             <div className="search-box">
-              <input className="search-inp" placeholder="Enter vehicle number…" value={query}
+              <input className="search-inp" placeholder="Vehicle number, owner name, or flat…" value={query}
                 onChange={e => { setQuery(e.target.value); setLookupDone(false); }}
                 onKeyDown={e => e.key === "Enter" && handleLookup()} />
               <button className="btn-green" onClick={handleLookup}><IcoSearch /> Search</button>
@@ -913,10 +1288,16 @@ export default function MHTEVDirectory() {
                   <div className="rf full"><label>Owner Name</label><span>{lookupResult.ownerName}</span></div>
                   <div className="rf"><label>Manufacturer</label><span>{lookupResult.manufacturer || "—"}</span></div>
                   <div className="rf"><label>Model</label><span>{lookupResult.vehicleModel || "—"}</span></div>
+                  <div className="rf"><label>Battery</label><span>{lookupResult.batteryCapacity ? lookupResult.batteryCapacity + " kWh" : "—"}</span></div>
                   <div className="rf"><label>Tower</label><span>{lookupResult.tower}</span></div>
                   <div className="rf"><label>Flat No.</label><span>{lookupResult.flat}</span></div>
                   <div className="rf"><label>Phone</label><span>{lookupResult.phone}</span></div>
                   {lookupResult.email && <div className="rf"><label>Email</label><span>{lookupResult.email}</span></div>}
+                </div>
+                <div className="contact-row">
+                  {lookupResult.phone && <a className="contact-btn" href={`tel:${lookupResult.phone}`}>Call</a>}
+                  {lookupResult.phone && <a className="contact-btn wa" href={`https://wa.me/91${lookupResult.phone}`} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  {lookupResult.email && <a className="contact-btn" href={`mailto:${lookupResult.email}`}>Email</a>}
                 </div>
               </div>
             )}
@@ -940,10 +1321,43 @@ export default function MHTEVDirectory() {
               <p className="lookup-p">Browse all registered vehicles. Check before registering to avoid duplicates.</p>
             </div>
             <div style={{ marginTop:28 }}>
-              <VehicleTable records={records} showActions={false} onEdit={null} onDelete={null} />
+              <VehicleTable records={records} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
             </div>
           </div>
         )}
+
+        {/* ══════ MY VEHICLES ══════ */}
+        {tab === "mine" && (() => {
+          const mine = records.filter(r => r.userId === session.user.id);
+          return (
+            <div>
+              <div className="lookup-hero" style={{ paddingBottom:8 }}>
+                <div className="eyebrow">Your Registrations</div>
+                <h1 className="lookup-h1" style={{ fontSize:30 }}>My <span>Vehicles</span></h1>
+                <p className="lookup-p">Your registered EVs. Edit any of them, or add another.</p>
+              </div>
+              <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+                <button className="btn-green" onClick={() => setTab("register")}><IcoPlus /> Add an EV</button>
+              </div>
+              {mine.length === 0
+                ? <div className="empty">You haven't registered any EVs yet. Use <strong style={{ color:"rgba(74,222,128,.6)" }}>Register</strong> to add one.</div>
+                : <VehicleTable records={mine} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
+              }
+            </div>
+          );
+        })()}
+
+        {/* ══════ DASHBOARD ══════ */}
+        {tab === "dashboard" && <Dashboard records={records} />}
+
+        {/* ══════ CHARGING ETIQUETTE ══════ */}
+        {tab === "charging" && <ChargingEtiquette />}
+
+        {/* ══════ COMMUNITY BOARD ══════ */}
+        {tab === "board" && <Board userId={session.user.id} authorName={profile?.full_name} isAdmin={isAdmin} flash={flash} />}
+
+        {/* ══════ CHARGER FAULTS ══════ */}
+        {tab === "faults" && <Faults userId={session.user.id} reporterName={profile?.full_name} isAdmin={isAdmin} flash={flash} />}
 
         {/* ══════ REGISTER (public — add & edit, NO delete) ══════ */}
         {tab === "register" && (
@@ -952,7 +1366,7 @@ export default function MHTEVDirectory() {
               <div className="success-panel">
                 <div className="success-icon"><IcoCheck /></div>
                 <h3>Vehicle Registered!</h3>
-                <p>Your EV has been added to the MHT directory and is visible to everyone instantly.</p>
+                <p>Your EV has been added to the MHT directory and is visible to approved residents.</p>
                 <button className="btn-green" style={{ margin:"0 auto" }}
                   onClick={() => { setRegSuccess(false); setRegForm(EMPTY_FORM); setRegError(""); setRegVnErr(""); }}>
                   <IcoPlus /> Register Another
@@ -971,9 +1385,10 @@ export default function MHTEVDirectory() {
                 <VehicleForm
                   form={regForm}
                   onChange={setRegForm}
-                  onManufacturerChange={v => setRegForm(f => ({ ...f, manufacturer: v, vehicleModel: "" }))}
+                  onManufacturerChange={v => setRegForm(f => ({ ...f, manufacturer: v, vehicleModel: "", batteryCapacity: "" }))}
                   vnErr={regVnErr}
                   setVnErr={setRegVnErr}
+                  idPrefix="reg"
                 />
                 {regError && <div className="f-err" style={{ marginTop:12 }}>⚠ {regError}</div>}
                 <div className="f-actions" style={{ marginTop:16 }}>
@@ -987,111 +1402,42 @@ export default function MHTEVDirectory() {
           </div>
         )}
 
-        {/* ══════ ADMIN — login gate ══════ */}
-        {tab === "admin" && !isAdmin && loginView === "login" && (
-          <div className="login-card">
-            <div className="login-icon">🔒</div>
-            <h2>Admin Access</h2>
-            <p>Enter your password to manage the directory</p>
-            <div className="pw-wrap">
-              <input type={showPw ? "text" : "password"} className={"pw-inp" + (pwError ? " err" : "")}
-                placeholder="Password" value={adminPw}
-                onChange={e => { setAdminPw(e.target.value); setPwError(""); }}
-                onKeyDown={e => e.key === "Enter" && handleLogin()} />
-              <button className="eye-btn" onClick={() => setShowPw(p => !p)}>
-                {showPw ? <IcoEyeOff /> : <IcoEye />}
-              </button>
-            </div>
-            {pwError && <div className="pw-err">{pwError}</div>}
-            <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={handleLogin}>Unlock</button>
-            <div><button className="forgot-link" onClick={startForgot}>Forgot password?</button></div>
-            <div className="hint">Default: admin123</div>
-          </div>
-        )}
-
-        {/* ══════ ADMIN — forgot password ══════ */}
-        {tab === "admin" && !isAdmin && loginView === "forgot" && (
-          <div className="login-card" style={{ maxWidth:400 }}>
-            <div className="login-icon">🔑</div>
-            <div className="forgot-title">Reset Password</div>
-            <div className="step-indicator">
-              {[1,2,3].map(s => (
-                <div key={s} className={"step-dot" + (fStep === s ? " active" : fStep > s ? " done" : "")} />
-              ))}
-            </div>
-            {fStep === 1 && (
-              <div>
-                <p className="forgot-desc">We'll verify your identity using the security question set by the admin.</p>
-                {!getResetQ()
-                  ? <div className="pw-err">No security question configured. Contact the society secretary.</div>
-                  : <div style={{ background:"rgba(74,222,128,.06)", border:"1px solid rgba(74,222,128,.15)", borderRadius:8, padding:"12px 14px", fontSize:12, color:"rgba(74,222,128,.8)", marginBottom:14, textAlign:"left", lineHeight:1.6 }}>
-                      Security question is set. Click Continue to proceed.
-                    </div>
-                }
-                {fErr && <div className="pw-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotNext1}>Continue</button>
-              </div>
-            )}
-            {fStep === 2 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">Security Question</div>
-                  <div style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", borderRadius:8, padding:"10px 13px", fontSize:13, color:"rgba(255,255,255,.7)", lineHeight:1.5 }}>
-                    {getResetQ()}
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Your Answer</div>
-                  <input className="pw-inp" style={{ marginBottom:0 }} placeholder="Type your answer"
-                    value={fAnswer} onChange={e => { setFAnswer(e.target.value); setFErr(""); }}
-                    onKeyDown={e => e.key === "Enter" && forgotNext2()} />
-                </div>
-                {fErr && <div className="step-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotNext2}>Verify Answer</button>
-              </div>
-            )}
-            {fStep === 3 && (
-              <div className="sf-form">
-                <p className="forgot-desc">Identity verified. Set your new password below.</p>
-                <div>
-                  <div className="sf-label">New Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={fShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Min. 6 characters" value={fNewPw}
-                      onChange={e => { setFNewPw(e.target.value); setFErr(""); }} />
-                    <button className="eye-btn" onClick={() => setFShowPw(p => !p)}>
-                      {fShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Confirm Password</div>
-                  <input type={fShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                    placeholder="Repeat password" value={fConfirm}
-                    onChange={e => { setFConfirm(e.target.value); setFErr(""); }}
-                    onKeyDown={e => e.key === "Enter" && forgotFinish()} />
-                </div>
-                {fErr && <div className="step-err">{fErr}</div>}
-                <button className="btn-green" style={{ width:"100%", justifyContent:"center" }} onClick={forgotFinish}>
-                  <IcoCheck /> Set New Password
-                </button>
-              </div>
-            )}
-            <div style={{ marginTop:16 }}>
-              <button className="forgot-link" onClick={() => { setLoginView("login"); setFErr(""); }}>← Back to login</button>
-            </div>
-          </div>
-        )}
-
-        {/* ══════ ADMIN — panel (full access: add + edit + DELETE) ══════ */}
+        {/* ══════ ADMIN — panel (full access: approvals + add + edit + DELETE) ══════ */}
         {tab === "admin" && isAdmin && (
           <div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12, marginBottom:20 }}>
               <div className="admin-badge"><IcoLock /> Admin Mode — Full Access</div>
               <div style={{ display:"flex", gap:8 }}>
-                <button className="btn-ghost" onClick={loadRecords}><IcoRefresh /> Refresh</button>
-                <button className="btn-yellow" onClick={openReset}><IcoKey /> Reset Password</button>
+                <button className="btn-ghost" onClick={() => { loadRecords(); loadPending(); }}><IcoRefresh /> Refresh</button>
               </div>
+            </div>
+
+            {/* Pending approvals */}
+            <div style={{ marginBottom:24 }}>
+              <div className="sec-label" style={{ marginBottom:10 }}>Pending Approvals ({pendingList.length})</div>
+              {pendingList.length === 0
+                ? <div className="csv-hint">No residents awaiting approval.</div>
+                : <div className="tbl-wrap">
+                    <table>
+                      <thead><tr><th>Name</th><th>Email</th><th>Flat</th><th></th></tr></thead>
+                      <tbody>
+                        {pendingList.map(p => (
+                          <tr key={p.id}>
+                            <td>{p.full_name || "—"}</td>
+                            <td style={{ color:"rgba(255,255,255,.55)", fontSize:12 }}>{p.email || "—"}</td>
+                            <td>{p.flat || "—"}</td>
+                            <td>
+                              <div className="acts">
+                                <button className="btn-green" style={{ padding:"6px 12px" }} onClick={() => decide(p.id, "approved")}><IcoCheck /> Approve</button>
+                                <button className="ico-btn del" onClick={() => decide(p.id, "rejected")} title="Reject"><IcoClose /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+              }
             </div>
 
             <div className="stat-row">
@@ -1101,16 +1447,15 @@ export default function MHTEVDirectory() {
             </div>
 
             <div className="toolbar">
-              <input className="adm-search" placeholder="Filter records…" />
               <button className="btn-ghost" onClick={() => fileRef.current.click()}><IcoUpload /> Upload CSV</button>
               <button className="btn-green" onClick={() => setTab("register")}><IcoPlus /> Add Entry</button>
               <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={handleCSV} />
             </div>
 
-            <div className="csv-hint">CSV columns (all optional — at least one value per row): <span>vehicleNumber, ownerName, tower, flat, phone, email, manufacturer, vehicleModel</span> · Duplicate vehicle numbers are skipped automatically.</div>
+            <div className="csv-hint">CSV columns (all optional — at least one value per row): <span>vehicleNumber, ownerName, tower, flat, phone, email, manufacturer, vehicleModel, batteryCapacity</span> · Duplicate vehicle numbers are skipped automatically.</div>
             {csvMsg && <div className={"msg " + (csvMsg.startsWith("✓") ? "ok" : "bad")}>{csvMsg}</div>}
 
-            <VehicleTable records={records} showActions={true} onEdit={openEdit} onDelete={handleDelete} />
+            <VehicleTable records={records} isAdmin={isAdmin} currentUserId={session.user.id} onEdit={openEdit} onDelete={handleDelete} />
           </div>
         )}
       </div>
@@ -1129,9 +1474,10 @@ export default function MHTEVDirectory() {
             <VehicleForm
               form={editForm}
               onChange={setEditForm}
-              onManufacturerChange={v => setEditForm(f => ({ ...f, manufacturer: v, vehicleModel: "" }))}
+              onManufacturerChange={v => setEditForm(f => ({ ...f, manufacturer: v, vehicleModel: "", batteryCapacity: "" }))}
               vnErr={editVnErr}
               setVnErr={setEditVnErr}
+              idPrefix="edit"
             />
             {editError && <div className="f-err" style={{ marginTop:12 }}>⚠ {editError}</div>}
             <div className="f-actions" style={{ marginTop:16 }}>
@@ -1140,86 +1486,6 @@ export default function MHTEVDirectory() {
                 {editSaving ? "Saving…" : <><IcoCheck /> Save Changes</>}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════ RESET PASSWORD MODAL ══════ */}
-      {showReset && (
-        <div className="overlay" onClick={e => e.target === e.currentTarget && setShowReset(false)}>
-          <div className="modal modal-sm">
-            <div className="modal-hdr">
-              <div>
-                <div className="modal-title">Reset Password</div>
-                <div className="modal-sub">{rStep === 1 ? "Verify current password" : "Set new password & security question"}</div>
-              </div>
-              <button className="x-btn" onClick={() => setShowReset(false)}><IcoClose /></button>
-            </div>
-            <div className="step-indicator" style={{ justifyContent:"flex-start", marginBottom:22 }}>
-              {[1,2].map(s => (
-                <div key={s} className={"step-dot" + (rStep === s ? " active" : rStep > s ? " done" : "")} />
-              ))}
-            </div>
-            {rStep === 1 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">Current Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Enter current password" value={rCurrent}
-                      onChange={e => { setRCurrent(e.target.value); setRErr(""); }}
-                      onKeyDown={e => e.key === "Enter" && resetNext1()} />
-                    <button className="eye-btn" onClick={() => setRShowPw(p => !p)}>
-                      {rShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                {rErr && <div className="step-err">{rErr}</div>}
-                <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-                  <button className="btn-cancel" onClick={() => setShowReset(false)}>Cancel</button>
-                  <button className="btn-green" onClick={resetNext1}>Continue</button>
-                </div>
-              </div>
-            )}
-            {rStep === 2 && (
-              <div className="sf-form">
-                <div>
-                  <div className="sf-label">New Password</div>
-                  <div className="pw-wrap" style={{ marginBottom:0 }}>
-                    <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                      placeholder="Min. 6 characters" value={rNew}
-                      onChange={e => { setRNew(e.target.value); setRErr(""); }} />
-                    <button className="eye-btn" onClick={() => setRShowPw(p => !p)}>
-                      {rShowPw ? <IcoEyeOff /> : <IcoEye />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <div className="sf-label">Confirm New Password</div>
-                  <input type={rShowPw ? "text" : "password"} className="pw-inp" style={{ marginBottom:0 }}
-                    placeholder="Repeat new password" value={rConfirm}
-                    onChange={e => { setRConfirm(e.target.value); setRErr(""); }} />
-                </div>
-                <hr style={{ border:"none", borderTop:"1px solid rgba(255,255,255,.07)" }} />
-                <div>
-                  <div className="sf-label">Security Question <span className="req">*</span></div>
-                  <select className="fs" value={rQ} onChange={e => { setRQ(e.target.value); setRErr(""); }}>
-                    <option value="">— Choose a question —</option>
-                    {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <div className="sf-label">Your Answer <span className="req">*</span></div>
-                  <input className="fi" placeholder="Answer (not case-sensitive)" value={rA}
-                    onChange={e => { setRA(e.target.value); setRErr(""); }} />
-                </div>
-                {rErr && <div className="step-err">{rErr}</div>}
-                <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-                  <button className="btn-cancel" onClick={() => setRStep(1)}>Back</button>
-                  <button className="btn-green" onClick={resetSave}><IcoCheck /> Save Changes</button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
